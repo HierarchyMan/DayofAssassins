@@ -4,7 +4,6 @@ import com.fusion.dev.cystol.config.PluginConfig;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
@@ -88,14 +87,22 @@ public final class FfaSpawnService {
     }
 
     /**
-     * Prefer Y closest to centerY within search range; require solid below and air above.
+     * Prefer Y closest to centerY within search range; require solid floor and clear air column.
+     * Feet Y is the block coordinate the player stands in (floor at y-1).
      */
     public int findStandableY(World world, double x, double z, double preferredY,
                               CuboidBounds cuboid, int ySearchRange, int minAirAbove) {
         int base = (int) Math.floor(preferredY);
-        int minY = Math.max(cuboid.minY() == (int) cuboid.minY() ? (int) cuboid.minY() : (int) Math.floor(cuboid.minY()),
-                world.getMinHeight());
-        int maxY = Math.min((int) Math.floor(cuboid.maxY()), world.getMaxHeight() - 3);
+        int air = Math.max(1, minAirAbove);
+        int minY = Math.max((int) Math.floor(cuboid.minY()), world.getMinHeight() + 1);
+        // Leave room for the air column and keep head inside cuboid / world.
+        int maxByWorld = world.getMaxHeight() - air;
+        int maxByCuboid = (int) Math.floor(cuboid.maxY()) - (air - 1);
+        int maxY = Math.min(maxByCuboid, maxByWorld);
+        if (maxY < minY) {
+            // Degenerate cuboid height — fall back to preferred, clamped to world.
+            return Math.max(world.getMinHeight() + 1, Math.min(maxByWorld, base));
+        }
 
         int bestY = base;
         int bestDist = Integer.MAX_VALUE;
@@ -105,7 +112,7 @@ public final class FfaSpawnService {
                 if (y < minY || y > maxY) {
                     continue;
                 }
-                if (isSafe(world, x, y, z, minAirAbove)) {
+                if (isSafe(world, x, y, z, air)) {
                     int dist = Math.abs(y - base);
                     if (dist < bestDist) {
                         bestDist = dist;
@@ -120,9 +127,18 @@ public final class FfaSpawnService {
         if (bestDist != Integer.MAX_VALUE) {
             return bestY;
         }
-        return Math.max(minY, Math.min(maxY, base));
+        int fallback = Math.max(minY, Math.min(maxY, base));
+        logger.warning(String.format(
+                "No standable Y near (%.1f, %.1f) preferredY=%d; using fallback y=%d",
+                x, z, base, fallback
+        ));
+        return fallback;
     }
 
+    /**
+     * Solid non-liquid floor at y-1; feet + head column must be passable and non-liquid
+     * for {@code minAirAbove} blocks (design: ≥2 air above feet by default).
+     */
     private boolean isSafe(World world, double x, int y, double z, int minAirAbove) {
         int bx = (int) Math.floor(x);
         int bz = (int) Math.floor(z);
@@ -131,8 +147,12 @@ public final class FfaSpawnService {
             return false;
         }
         for (int i = 0; i < minAirAbove; i++) {
-            Block air = world.getBlockAt(bx, y + i, bz);
-            if (air.getType() != Material.AIR && !air.isPassable()) {
+            Block space = world.getBlockAt(bx, y + i, bz);
+            if (space.isLiquid()) {
+                return false;
+            }
+            // Reject solid / non-passable (fences, glass, etc.). Allow air, cave air, plants.
+            if (!space.isPassable()) {
                 return false;
             }
         }
