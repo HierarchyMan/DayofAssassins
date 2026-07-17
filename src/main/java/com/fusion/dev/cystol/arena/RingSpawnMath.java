@@ -52,10 +52,54 @@ public final class RingSpawnMath {
     }
 
     /**
+     * Ring half-radius so adjacent players on a regular N-gon have chord ≈ {@code minSpacing}.
+     * For N=2 that is spacing/2 (pair distance = spacing). Grows with N; caller clamps to arena max.
+     */
+    public static double ringRadiusForSpacing(int playerCount, double minSpacing) {
+        if (playerCount <= 1) {
+            return 0.0;
+        }
+        double spacing = Math.max(1.0, minSpacing);
+        // chord = 2 * r * sin(π/N)  →  r = chord / (2 sin(π/N))
+        double sin = Math.sin(Math.PI / playerCount);
+        if (sin < 1e-9) {
+            return spacing;
+        }
+        return spacing / (2.0 * sin);
+    }
+
+    /**
+     * Scale max ellipse half-axes down so few players stand close enough to see each other,
+     * while many players still use the full arena cap.
+     *
+     * @return {{@code rx}, {@code rz}} after player-count scaling
+     */
+    public static double[] scaleRadiiForPlayerCount(double maxRx, double maxRz, int playerCount, double minSpacing) {
+        if (playerCount <= 1) {
+            return new double[]{0.0, 0.0};
+        }
+        double maxHalf = Math.min(maxRx, maxRz);
+        if (maxHalf <= 1e-9) {
+            // Degenerate free space — keep axes as-is (likely near-edge center).
+            return new double[]{maxRx, maxRz};
+        }
+        double target = ringRadiusForSpacing(playerCount, minSpacing);
+        // Never exceed arena max; never force larger than free space.
+        double scale = Math.min(1.0, target / maxHalf);
+        // Also expand toward target when maxHalf is the limiting axis on one side only:
+        // scale both axes uniformly so ellipse shape is preserved.
+        return new double[]{maxRx * scale, maxRz * scale};
+    }
+
+    /**
      * Generate N horizontal points. If adjacent spacing on single ring &lt; 1 block,
      * use concentric rings; if still congested, use random viable samples.
      *
+     * <p>Ring size scales with player count: few players → tight ring (≈ {@code minSpacing}
+     * between neighbors); many players → up to the diameter-fraction arena cap.
+     *
      * @param standableXZ predicate on (x,z) — pure; y filled by preferredY or 0 for math-only tests
+     * @param minSpacing  target block distance between adjacent ring mates (default ~8)
      */
     public static List<SpawnPoint> computeSpawns(
             CuboidBounds cuboid,
@@ -65,6 +109,7 @@ public final class RingSpawnMath {
             int playerCount,
             double margin,
             double maxDiameterFraction,
+            double minSpacing,
             Predicate<double[]> standableXZ,
             Random random
     ) {
@@ -81,7 +126,8 @@ public final class RingSpawnMath {
         double clampedCx = clamp(cx, cuboid.minX(), cuboid.maxX());
         double clampedCz = clamp(cz, cuboid.minZ(), cuboid.maxZ());
 
-        double[] radii = ellipseRadii(cuboid, clampedCx, clampedCz, margin, maxDiameterFraction);
+        double[] maxRadii = ellipseRadii(cuboid, clampedCx, clampedCz, margin, maxDiameterFraction);
+        double[] radii = scaleRadiiForPlayerCount(maxRadii[0], maxRadii[1], playerCount, minSpacing);
         double rx = radii[0];
         double rz = radii[1];
 
@@ -138,6 +184,26 @@ public final class RingSpawnMath {
             randomPoints.add(new SpawnPoint(x, cy, z, yaw));
         }
         return randomPoints;
+    }
+
+    /**
+     * Backward-compatible overload: default min spacing of 8 blocks between neighbors.
+     */
+    public static List<SpawnPoint> computeSpawns(
+            CuboidBounds cuboid,
+            double cx,
+            double cy,
+            double cz,
+            int playerCount,
+            double margin,
+            double maxDiameterFraction,
+            Predicate<double[]> standableXZ,
+            Random random
+    ) {
+        return computeSpawns(
+                cuboid, cx, cy, cz, playerCount, margin, maxDiameterFraction,
+                8.0, standableXZ, random
+        );
     }
 
     private static List<SpawnPoint> ringPoints(double cx, double cy, double cz, double rx, double rz, int n) {

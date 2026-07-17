@@ -54,4 +54,33 @@ class EventTimelineTest {
         assertEquals(1.0, t.liveFillProgress(end), 1e-9);
         assertEquals(3600, t.secondsUntilEnd(Instant.parse("2026-01-01T13:00:00Z")));
     }
+
+    @Test
+    void secondsUntilNextPhaseIsPhaseBoundaryNotTotalEnd() {
+        Instant start = Instant.parse("2026-01-01T12:00:00Z");
+        Instant end = Instant.parse("2026-01-01T14:00:00Z");
+        // FFA at 13:30
+        EventTimeline t = new EventTimeline(start, end, null, 1800);
+
+        // COUNTDOWN: until start
+        assertEquals(3600, t.secondsUntilNextPhase(Instant.parse("2026-01-01T11:00:00Z")));
+        // HUNT mid: until FFA (13:30), not until end (14:00)
+        assertEquals(1800, t.secondsUntilNextPhase(Instant.parse("2026-01-01T13:00:00Z")));
+        assertEquals(3600, t.secondsUntilEnd(Instant.parse("2026-01-01T13:00:00Z")));
+        // FFA: until end
+        assertEquals(1800, t.secondsUntilNextPhase(Instant.parse("2026-01-01T13:30:00Z")));
+        // ENDED
+        assertEquals(0, t.secondsUntilNextPhase(Instant.parse("2026-01-01T14:00:00Z")));
+    }
+
+    @Test
+    void phaseFillProgressTracksCurrentSegment() {
+        Instant start = Instant.parse("2026-01-01T12:00:00Z");
+        Instant end = Instant.parse("2026-01-01T14:00:00Z");
+        EventTimeline t = new EventTimeline(start, end, null, 1800);
+        // HUNT half-way start→FFA (12:00→13:30) at 12:45
+        assertEquals(0.5, t.phaseFillProgress(Instant.parse("2026-01-01T12:45:00Z"), 3600), 1e-9);
+        // FFA half-way 13:30→14:00 at 13:45
+        assertEquals(0.5, t.phaseFillProgress(Instant.parse("2026-01-01T13:45:00Z"), 3600), 1e-9);
+    }
 }

@@ -1,19 +1,22 @@
+# Player-facing copy: plain English only — no flags, permissions, DB, or ops jargon.
+# Admin section is staff-only but still avoids raw internal identifiers where possible.
+
 messages:
-  no-permission: "&cNo permission."
-  players-only: "&cPlayers only."
-  reload-ok: "&aDay of Assassins config reloaded."
+  no-permission: "&cYou can't use that."
+  players-only: "&cOnly players can do that."
+  reload-ok: "&aDay of Assassins text and settings reloaded."
 
 event:
   description:
     - "&c&lDay of Assassins"
     - "&7Hunt players with the Assassin's Compass."
     - "&7Rack up kills — highest kills wins."
-    - "&7A final deathmatch teleports you near the end."
+    - "&7Near the end, a final deathmatch pulls fighters into the arena."
   join-countdown: "&cDay of Assassins &7starts soon — &f/event &7for details."
 
 phase:
   idle: "Idle"
-  countdown: "Countdown"
+  countdown: "Starting soon"
   hunt: "Hunt"
   ffa: "Finale"
   ended: "Ended"
@@ -24,41 +27,42 @@ hunt:
   join-message: "&c&lDay of Assassins &7is live! Use your &fAssassin's Compass &7to hunt."
 
 bossbar:
+  # %countdown% / %remaining% = time until the next stage (start / finale / end)
+  # %until_end% = time until the event fully ends (optional)
   countdown-title: "&cDay of Assassins &7starts in &f%countdown%"
-  title: "&cDay of Assassins &7| &f%top_killer% &8(%top_kills%) &7| &f%remaining%"
-  title-no-kills: "&cDay of Assassins &7| &8Nobody yet &7| &f%remaining%"
+  title: "&cDay of Assassins &7| &f%top_killer% &8(%top_kills% kills) &7| next &f%remaining%"
+  title-no-kills: "&cDay of Assassins &7| &8No leader yet &7| next &f%remaining%"
 
 compass:
   already-have: "&cYou already have the Assassin's Compass."
   received: "&aYou received the Assassin's Compass."
-  inv-full-actionbar: "&eInventory full! Free a slot and use &f/preciv compass"
-  tracking-selected: "&7Tracking: &f%target%"
-  other-world-actionbar: "&eTarget is in: &f%world%"
+  inv-full-actionbar: "&eInventory full! Free a slot, then use &f/preciv compass"
+  tracking-selected: "&7Now tracking: &f%target%"
+  other-world-actionbar: "&eYour target is in another world: &f%world%"
   item:
     inactive:
       name: "&cAssassin's Compass"
       lore:
-        - "&7Status: &8Not tracking"
+        - "&7Not tracking anyone"
         - "&7Right-click to choose a target"
     tracking:
       name: "&cAssassin's Compass"
       lore:
-        - "&7Status: &aTracking"
-        - "&7Target: &f%target%"
+        - "&7Tracking: &f%target%"
         - "&7World: &f%world%"
         - "&7Right-click to change target"
     tracking-other-world:
       name: "&cAssassin's Compass"
       lore:
-        - "&7Status: &eOther dimension"
-        - "&7Target: &f%target%"
-        - "&7Dimension: &f%world%"
-        - "&7Right-click to change target"
+        - "&7Target is far away"
+        - "&7Player: &f%target%"
+        - "&7World: &f%world%"
+        - "&7Right-click to pick someone else"
     lost-target:
       name: "&cAssassin's Compass"
       lore:
-        - "&7Status: &cTarget unavailable"
-        - "&7Right-click to choose a new target"
+        - "&7Target is gone"
+        - "&7Right-click to choose someone new"
   gui:
     title: "&8Track a player"
     player:
@@ -71,7 +75,7 @@ compass:
         - "&7World: &f%world%"
         - "&7Kills: &c%kills%"
         - "&aCurrently tracking"
-        - "&eClick to re-select"
+        - "&eClick to keep this target"
     next-page:
       name: "&aNext page"
       lore:
@@ -83,27 +87,28 @@ compass:
     info:
       name: "&eHow to use"
       lore:
-        - "&7Select a player to track."
-        - "&7Only one target at a time."
+        - "&7Pick a player to track."
+        - "&7You can only track one at a time."
     no-players:
       name: "&cNo players"
       lore:
-        - "&7Nobody online to track."
+        - "&7Nobody online to track right now."
 
 killtop:
   header: "&c&lKill Leaderboard"
-  entry: "&e#%position% &f%player% &7- &c%kills% kills"
+  entry: "&e#%position% &f%player% &7— &c%kills% kills"
   empty: "&7No kills yet."
 
 ffa:
   announce-title: "&c&lFinal deathmatch"
   announce-subtitle: "&7Begins in &f%countdown%"
   final-countdown-title: "&c&l%seconds%"
-  final-countdown-subtitle: "&7Teleporting to the arena..."
+  final-countdown-subtitle: "&7Heading to the arena..."
   start-title: "&c&lFIGHT"
   start-subtitle: "&7The final deathmatch has begun"
-  join-message: "&c&lFinale active! &7Get to the arena — kills still count until the end."
-  outside-actionbar: "&eEvent finale is here — &f/warp pvparena"
+  join-message: "&c&lFinale is on! &7Head to the arena — kills still count until the end."
+  # Prefer a server-real hint; avoid hard-coded warps that may not exist
+  outside-actionbar: "&eFinale is underway — head to the arena!"
 
 end:
   title:
@@ -117,58 +122,60 @@ end:
       title: "&c&lBRONZE — #3"
       subtitle: "&7%kills% kills"
     place-other:
-      title: "&7Place &f#%place%"
+      title: "&7You finished &f#%place%"
       subtitle: "&7%kills% kills"
 
 rewards:
-  eligible: "&aCongrats! You scored &f#%place% &7with &c%kills% &7kills and are eligible for a reward. &ePlease contact staff to claim your reward."
-  staff-summary-header: "&eReward-eligible players (place ≤ %max_place%):"
+  # Top placers only — celebratory, no claim/ops language
+  eligible: "&aCongrats! You finished &f#%place% &7with &c%kills% &7kills."
+  # Staff-only (admin permission)
+  staff-summary-header: "&eTop finishers (1–%max_place%):"
   staff-summary-entry: "&7#%place% &f%player% &8(%kills% kills)"
 
 admin:
-  start-set: "&aStart time set to &f%time% &7(UTC+0)"
-  end-set: "&aEnd time set to &f%time% &7(UTC+0)"
-  ffa-set: "&aFFA override set to &f%time% &7(UTC+0)"
-  ffa-cleared: "&aFFA override cleared (using end − offset)."
-  centerspawn-set: "&aArena center spawn set to your location."
-  pos1-set: "&aArena pos1 set to &f%x% %y% %z%"
-  pos2-set: "&aArena pos2 set to &f%x% %y% %z%"
-  wand-given: "&aArena wand given. Left-click pos1, right-click pos2."
-  invalid-time: "&cInvalid time. Use yyyy/MM/dd HH:mm:ss (UTC+0)"
-  not-player: "&cPlayers only for this action."
+  start-set: "&aStart time set to &f%time% &7(UTC)"
+  end-set: "&aEnd time set to &f%time% &7(UTC)"
+  ffa-set: "&aFinale time set to &f%time% &7(UTC)"
+  ffa-cleared: "&aCustom finale time cleared — using the default (end minus offset)."
+  centerspawn-set: "&aArena center set to your location."
+  pos1-set: "&aArena corner 1 set to &f%x% %y% %z%"
+  pos2-set: "&aArena corner 2 set to &f%x% %y% %z%"
+  wand-given: "&aArena wand given. Left-click corner 1, right-click corner 2."
+  invalid-time: "&cInvalid time. Use &fyyyy/MM/dd HH:mm:ss &c(UTC)"
+  not-player: "&cOnly players can do that."
   status:
     header: "&c&lDay of Assassins &7— status"
-    phase: "&7Phase: &f%phase%"
+    phase: "&7Stage: &f%phase%"
     start: "&7Start: &f%time% &8UTC"
     end: "&7End: &f%time% &8UTC"
-    ffa: "&7FFA: &f%time% &8(%source%)"
-    remaining: "&7Remaining: &f%countdown%"
-    flags: "&7Flags: &fffa_teleported=%ffa_teleported% &7ceremony_done=%ceremony_done%"
-    kills: "&7Kills: &f%rows% &7rows | Top: &f%top_killer% &8(%top_kills%)"
+    ffa: "&7Finale: &f%time% &8(%source%)"
+    remaining: "&7Time left (this stage / clock): &f%countdown%"
+    flags: "&7One-shots: &ffinale TP done=%ffa_teleported% &7| &fceremony done=%ceremony_done%"
+    kills: "&7Kill rows: &f%rows% &7| Leader: &f%top_killer% &8(%top_kills%)"
     arena: "&7Arena: &f%world% &8| &7%cuboid% &8| center &f%center%"
-    vanish: "&7Vanish backend: &f%backend%"
-    eligible: "&7FFA eligible online: &f%count%"
-  startnow-ok: "&aEvent started now (&f%time%&a). Phase: &f%phase%"
-  ffanow-ok: "&aFFA moment set to now (&f%time%&a). Phase: &f%phase%"
-  endnow-ok: "&aEvent ended now. Phase: &f%phase%"
-  forcetp-ok: "&aForced FFA teleport."
-  forcetp-not-ffa: "&cNot in FFA phase. Use &f/preciv admin ffanow &cor wait for the clock."
-  forcetp-in-progress: "&cFFA teleport already in progress."
-  forcetp-no-spawns: "&cFFA teleport failed: arena world unloaded or no safe spawns. Fix arena, then retry."
-  forcetp-failed: "&cFFA teleport failed unexpectedly. Check console; flag left clear for retry."
+    vanish: "&7Vanish check: &f%backend%"
+    eligible: "&7Finale TP candidates online: &f%count%"
+  startnow-ok: "&aEvent started now (&f%time%&a). Stage: &f%phase%"
+  ffanow-ok: "&aFinale set to now (&f%time%&a). Stage: &f%phase%"
+  endnow-ok: "&aEvent ended now. Stage: &f%phase%"
+  forcetp-ok: "&aForced finale teleport."
+  forcetp-not-ffa: "&cNot in the finale yet. Use &f/preciv admin ffanow &cor wait for the schedule."
+  forcetp-in-progress: "&cFinale teleport is already running."
+  forcetp-no-spawns: "&cFinale teleport failed: arena world missing or no safe ground. Fix the arena, then retry."
+  forcetp-failed: "&cFinale teleport failed. Check the console, then try again."
   forceceremony-ok: "&aForced end ceremony."
-  forceceremony-not-ended: "&cNot in ENDED phase. Use &f/preciv admin endnow &cfirst."
-  resetflags-ok: "&aCleared ffa_teleported and ceremony_done flags."
-  eligible-header: "&eFFA eligible (&f%count%&e):"
-  eligible-empty: "&7Nobody online matches survival + unvanished + no bypass."
+  forceceremony-not-ended: "&cEvent has not ended yet. Use &f/preciv admin endnow &cfirst."
+  resetflags-ok: "&aCleared one-shot markers (finale TP + ceremony)."
+  eligible-header: "&eFinale TP candidates (&f%count%&e):"
+  eligible-empty: "&7Nobody online is ready (survival, not vanished, no TP skip)."
   eligible-entry: "&7- &f%player%"
   clearkills-confirm: "&cThis wipes all kill scores. Run &f/preciv admin clearkills confirm &cto proceed."
   clearkills-ok: "&aAll kill scores cleared."
   phase-usage: "&cUsage: /preciv admin phase <idle|countdown|hunt|ffa|ended>"
-  phase-ok: "&aSchedule adjusted. Phase: &f%phase%"
+  phase-ok: "&aSchedule adjusted. Stage: &f%phase%"
 
 wand:
   name: "&6Arena Selection Wand"
   lore:
-    - "&7Left-click: set pos1"
-    - "&7Right-click: set pos2"
+    - "&7Left-click: corner 1"
+    - "&7Right-click: corner 2"

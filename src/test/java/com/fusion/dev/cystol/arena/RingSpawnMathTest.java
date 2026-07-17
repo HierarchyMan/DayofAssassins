@@ -94,4 +94,44 @@ class RingSpawnMathTest {
             assertTrue(cuboid.containsHorizontal(p.x(), p.z()), p.x() + "," + p.z());
         }
     }
+
+    @Test
+    void twoPlayersUseTightRingNotFullArenaDiameter() {
+        // Huge arena: old logic put 2 players ~75 blocks apart (barely visible).
+        CuboidBounds cuboid = new CuboidBounds(0, 60, 0, 200, 80, 200);
+        double spacing = 8.0;
+        List<RingSpawnMath.SpawnPoint> pts = RingSpawnMath.computeSpawns(
+                cuboid, 100, 65, 100, 2, 2, 0.75, spacing,
+                xz -> cuboid.containsHorizontal(xz[0], xz[1]),
+                new Random(1)
+        );
+        assertEquals(2, pts.size());
+        double dist = Math.hypot(pts.get(0).x() - pts.get(1).x(), pts.get(0).z() - pts.get(1).z());
+        // Chord ≈ spacing (allow small numeric slack)
+        assertEquals(spacing, dist, 0.5);
+        // Far smaller than max diameter half*2 (~150)
+        assertTrue(dist < 20.0, "pair too far apart: " + dist);
+    }
+
+    @Test
+    void manyPlayersGrowTowardDiameterCap() {
+        CuboidBounds cuboid = new CuboidBounds(0, 60, 0, 200, 80, 200);
+        List<RingSpawnMath.SpawnPoint> few = RingSpawnMath.computeSpawns(
+                cuboid, 100, 65, 100, 4, 2, 0.75, 8.0, xz -> true, new Random(2)
+        );
+        List<RingSpawnMath.SpawnPoint> many = RingSpawnMath.computeSpawns(
+                cuboid, 100, 65, 100, 40, 2, 0.75, 8.0, xz -> true, new Random(2)
+        );
+        double fewR = Math.hypot(few.getFirst().x() - 100, few.getFirst().z() - 100);
+        double manyR = Math.hypot(many.getFirst().x() - 100, many.getFirst().z() - 100);
+        assertTrue(manyR > fewR + 5.0, "manyR=" + manyR + " fewR=" + fewR);
+    }
+
+    @Test
+    void ringRadiusForSpacingMatchesChordFormula() {
+        // N=2 → r = spacing/2
+        assertEquals(4.0, RingSpawnMath.ringRadiusForSpacing(2, 8.0), 1e-9);
+        // N=4 → r = spacing / (2 * sin(π/4)) = 8 / (2 * √2/2) = 8/√2 = 4√2
+        assertEquals(8.0 / Math.sqrt(2.0), RingSpawnMath.ringRadiusForSpacing(4, 8.0), 1e-9);
+    }
 }

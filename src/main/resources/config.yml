@@ -25,7 +25,11 @@ ffa:
     title-fade-out-ms: 150
     pitch-base: 0.9
     pitch-step: 0.12
+  # Cap ring diameter at this fraction of the longest cuboid horizontal side (many players).
   max-diameter-fraction: 0.75
+  # Target distance between adjacent players on the ring. Few players → tight ring (~this far);
+  # many players grow up to the diameter cap so the arena fills.
+  min-player-spacing: 8
   min-air-above: 2
   y-search-range: 12
   ring-margin-blocks: 2
@@ -61,13 +65,23 @@ wand:
 
 tab:
   scoreboard:
+    # Inject into the existing TAB board (never replaces it).
+    # Relative lines start at this 0-based index; absolute "line:" keys still override.
+    offset: 3
+    # How many ranked slots to fill as %top1_name%/%top1_kills% … %topN_*
+    top-slots: 3
+    empty-name: "—"
+    empty-kills: "0"
+    # Injected rows in order from offset. Placeholders:
+    #   %top1_name% %top1_kills% %top1_place% … through top-slots
+    #   %top_killer% / %top_kills%  (aliases for #1)
+    #   %phase%  %remaining% (until next phase)  %until_end% (until event end)
     lines:
-      - line: 3
-        text: "&c&lDay of Assassins"
-      - line: 4
-        text: "&7Top: &f%top_killer% &8(%top_kills%)"
-      - line: 5
-        text: "&7%phase% &8| &f%remaining%"
+      - "&c&l#1 &f%top1_name% &8(%top1_kills%)"
+      - "&6#2 &f%top2_name% &8(%top2_kills%)"
+      - "&e#3 &f%top3_name% &8(%top3_kills%)"
+      # %phase% = friendly stage label; %remaining% = time until next stage
+      - "&7%phase% &8· next &f%remaining%"
   bossbar:
     enabled: true
     color: RED

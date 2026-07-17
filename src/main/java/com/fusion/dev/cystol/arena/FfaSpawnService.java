@@ -5,14 +5,17 @@ import com.fusion.dev.cystol.util.VanishService;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
+import org.bukkit.block.data.Waterlogged;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Consumer;
@@ -62,12 +65,13 @@ public final class FfaSpawnService {
         double cz = config.centerZ();
         double margin = config.ringMarginBlocks();
         double frac = config.maxDiameterFraction();
+        double spacing = config.minPlayerSpacing();
         int air = config.minAirAbove();
         int yRange = config.ySearchRange();
 
         Random rng = ThreadLocalRandom.current();
         List<RingSpawnMath.SpawnPoint> points = RingSpawnMath.computeSpawns(
-                cuboid, cx, cy, cz, count, margin, frac,
+                cuboid, cx, cy, cz, count, margin, frac, spacing,
                 xz -> cuboid.containsHorizontal(xz[0], xz[1]),
                 rng
         );
@@ -81,34 +85,100 @@ public final class FfaSpawnService {
 
         List<Location> locations = new ArrayList<>(points.size());
         for (RingSpawnMath.SpawnPoint sp : points) {
-            int y = findStandableY(world, sp.x(), sp.z(), cy, cuboid, yRange, air);
-            Location loc = new Location(world, sp.x(), y, sp.z(), sp.yaw(), 0f);
-            locations.add(loc);
+            SafeColumn col = resolveSafeColumn(world, sp.x(), sp.z(), cy, cuboid, yRange, air, cx, cz, rng);
+            if (col == null) {
+                logger.warning(String.format(
+                        "No dry standable column for planned spawn (%.1f, %.1f) — refusing water/air feet",
+                        sp.x(), sp.z()
+                ));
+                continue;
+            }
+            locations.add(new Location(world, col.x, col.y, col.z, sp.yaw(), 0f));
+        }
+        // Keep player↔location pairing possible when a few columns failed.
+        if (!locations.isEmpty() && locations.size() < count) {
+            Location pad = locations.getLast();
+            while (locations.size() < count) {
+                locations.add(pad.clone());
+            }
         }
         return locations;
     }
 
+    private record SafeColumn(double x, int y, double z) {
+    }
+
     /**
-     * Prefer Y closest to centerY within search range; require solid floor and clear air column.
-     * Feet Y is the block coordinate the player stands in (floor at y-1).
+     * Resolve a dry standable column for a planned XZ: exact column first, then nearby nudges,
+     * then center, then random cuboid samples. Never returns water/air/lava feet.
      */
-    public int findStandableY(World world, double x, double z, double preferredY,
-                              CuboidBounds cuboid, int ySearchRange, int minAirAbove) {
+    private SafeColumn resolveSafeColumn(
+            World world,
+            double x,
+            double z,
+            double preferredY,
+            CuboidBounds cuboid,
+            int ySearchRange,
+            int minAirAbove,
+            double centerX,
+            double centerZ,
+            Random rng
+    ) {
+        OptionalInt exact = findStandableY(world, x, z, preferredY, cuboid, ySearchRange, minAirAbove);
+        if (exact.isPresent()) {
+            return new SafeColumn(x, exact.getAsInt(), z);
+        }
+        // Nearby ring around planned point
+        for (int attempt = 0; attempt < 16; attempt++) {
+            double angle = rng.nextDouble() * Math.PI * 2;
+            double dist = 1.0 + rng.nextDouble() * 4.0;
+            double nx = clamp(x + Math.cos(angle) * dist, cuboid.minX(), cuboid.maxX());
+            double nz = clamp(z + Math.sin(angle) * dist, cuboid.minZ(), cuboid.maxZ());
+            OptionalInt y = findStandableY(world, nx, nz, preferredY, cuboid, ySearchRange, minAirAbove);
+            if (y.isPresent()) {
+                return new SafeColumn(nx, y.getAsInt(), nz);
+            }
+        }
+        // Arena center
+        OptionalInt centerY = findStandableYFull(world, centerX, centerZ, preferredY, cuboid, minAirAbove);
+        if (centerY.isPresent()) {
+            return new SafeColumn(centerX, centerY.getAsInt(), centerZ);
+        }
+        // Random columns inside cuboid
+        for (int attempt = 0; attempt < 32; attempt++) {
+            double spanX = Math.max(1e-3, cuboid.maxX() - cuboid.minX());
+            double spanZ = Math.max(1e-3, cuboid.maxZ() - cuboid.minZ());
+            double nx = cuboid.minX() + rng.nextDouble() * spanX;
+            double nz = cuboid.minZ() + rng.nextDouble() * spanZ;
+            OptionalInt y = findStandableYFull(world, nx, nz, preferredY, cuboid, minAirAbove);
+            if (y.isPresent()) {
+                return new SafeColumn(nx, y.getAsInt(), nz);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Prefer Y closest to centerY within search range; require solid dry floor and clear air column.
+     * Feet Y is the block coordinate the player stands in (floor at y-1).
+     * Empty if no safe Y — callers must not invent water/air feet positions.
+     */
+    public OptionalInt findStandableY(World world, double x, double z, double preferredY,
+                                     CuboidBounds cuboid, int ySearchRange, int minAirAbove) {
         int base = (int) Math.floor(preferredY);
         int air = Math.max(1, minAirAbove);
         int minY = Math.max((int) Math.floor(cuboid.minY()), world.getMinHeight() + 1);
-        // Leave room for the air column and keep head inside cuboid / world.
         int maxByWorld = world.getMaxHeight() - air;
         int maxByCuboid = (int) Math.floor(cuboid.maxY()) - (air - 1);
         int maxY = Math.min(maxByCuboid, maxByWorld);
         if (maxY < minY) {
-            // Degenerate cuboid height — fall back to preferred, clamped to world.
-            return Math.max(world.getMinHeight() + 1, Math.min(maxByWorld, base));
+            return OptionalInt.empty();
         }
 
-        int bestY = base;
+        int bestY = -1;
         int bestDist = Integer.MAX_VALUE;
-        for (int d = 0; d <= ySearchRange; d++) {
+        int range = Math.max(0, ySearchRange);
+        for (int d = 0; d <= range; d++) {
             for (int sign : d == 0 ? new int[]{0} : new int[]{1, -1}) {
                 int y = base + sign * d;
                 if (y < minY || y > maxY) {
@@ -120,45 +190,102 @@ public final class FfaSpawnService {
                         bestDist = dist;
                         bestY = y;
                         if (dist == 0) {
-                            return bestY;
+                            return OptionalInt.of(bestY);
                         }
                     }
                 }
             }
         }
         if (bestDist != Integer.MAX_VALUE) {
-            return bestY;
+            return OptionalInt.of(bestY);
         }
-        int fallback = Math.max(minY, Math.min(maxY, base));
-        logger.warning(String.format(
-                "No standable Y near (%.1f, %.1f) preferredY=%d; using fallback y=%d",
-                x, z, base, fallback
-        ));
-        return fallback;
+        // Local range failed — scan entire cuboid height at this column before giving up.
+        return findStandableYFull(world, x, z, preferredY, cuboid, air);
+    }
+
+    /** Full vertical scan of the column inside the cuboid (still dry + solid only). */
+    public OptionalInt findStandableYFull(World world, double x, double z, double preferredY,
+                                         CuboidBounds cuboid, int minAirAbove) {
+        int air = Math.max(1, minAirAbove);
+        int minY = Math.max((int) Math.floor(cuboid.minY()), world.getMinHeight() + 1);
+        int maxByWorld = world.getMaxHeight() - air;
+        int maxByCuboid = (int) Math.floor(cuboid.maxY()) - (air - 1);
+        int maxY = Math.min(maxByCuboid, maxByWorld);
+        if (maxY < minY) {
+            return OptionalInt.empty();
+        }
+        int base = (int) Math.floor(preferredY);
+        int bestY = -1;
+        int bestDist = Integer.MAX_VALUE;
+        for (int y = minY; y <= maxY; y++) {
+            if (!isSafe(world, x, y, z, air)) {
+                continue;
+            }
+            int dist = Math.abs(y - base);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestY = y;
+            }
+        }
+        return bestY < 0 ? OptionalInt.empty() : OptionalInt.of(bestY);
+    }
+
+    private static double clamp(double v, double lo, double hi) {
+        if (lo > hi) {
+            return (lo + hi) / 2.0;
+        }
+        return Math.max(lo, Math.min(hi, v));
     }
 
     /**
-     * Solid non-liquid floor at y-1; feet + head column must be passable and non-liquid
-     * for {@code minAirAbove} blocks (design: ≥2 air above feet by default).
+     * Solid dry floor at y-1; feet + head column passable and non-liquid
+     * for {@code minAirAbove} blocks. Rejects water, lava, waterlogged spaces, bubble columns.
      */
-    private boolean isSafe(World world, double x, int y, double z, int minAirAbove) {
+    boolean isSafe(World world, double x, int y, double z, int minAirAbove) {
         int bx = (int) Math.floor(x);
         int bz = (int) Math.floor(z);
         Block floor = world.getBlockAt(bx, y - 1, bz);
-        if (!floor.getType().isSolid() || floor.isLiquid()) {
+        if (!floor.getType().isSolid() || isLiquidLike(floor)) {
             return false;
         }
+        // Magma / campfire / etc. are solid but hostile — still legal stand; water is the hard fail.
         for (int i = 0; i < minAirAbove; i++) {
             Block space = world.getBlockAt(bx, y + i, bz);
-            if (space.isLiquid()) {
+            if (isLiquidLike(space)) {
                 return false;
             }
-            // Reject solid / non-passable (fences, glass, etc.). Allow air, cave air, plants.
             if (!space.isPassable()) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static boolean isLiquidLike(Block block) {
+        if (block == null) {
+            return true;
+        }
+        if (block.isLiquid()) {
+            return true;
+        }
+        Material type = block.getType();
+        if (type == Material.BUBBLE_COLUMN
+                || type == Material.KELP
+                || type == Material.KELP_PLANT
+                || type == Material.SEAGRASS
+                || type == Material.TALL_SEAGRASS
+                || type == Material.WATER_CAULDRON
+                || type == Material.LAVA_CAULDRON) {
+            return true;
+        }
+        try {
+            if (block.getBlockData() instanceof Waterlogged w && w.isWaterlogged()) {
+                return true;
+            }
+        } catch (Throwable ignored) {
+            // older / unexpected block data
+        }
+        return false;
     }
 
     /**

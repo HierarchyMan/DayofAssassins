@@ -14,12 +14,12 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 |---------|---------|
 | **Timed event phases** | Countdown → Hunt → FFA → Ended (persisted across restarts) |
 | **Assassin’s Compass** | GUI of online players, track one target, dimension action bar |
-| **Kill leaderboard** | Counts via **PvPManager**; `/preciv killtop`; feeds bossbar top killer |
-| **TAB UI** | Filling countdown bossbar, live top-killer bar, scoreboard line injects |
-| **FFA finale** | One-shot ring/oval spawn in a wand-selected cuboid around center |
+| **Kill leaderboard** | Counts via **PvPManager**; `/preciv killtop`; scoreboard top-N + bossbar #1 |
+| **TAB UI** | Filling countdown bossbar (stacks with existing TAB bars); **injects** event lines into the existing TAB scoreboard (never replaces it) |
+| **FFA finale** | One-shot ring/oval spawn scaled to player count; dry standable Y only |
 | **Announcements** | Configurable titles before FFA (“final deathmatch begins in…”) |
 | **End ceremony** | Dense shared-place ranking; titles for all; gold/silver/bronze + heroic for top 3 |
-| **Reward eligibility** | Configurable top-N places get a “contact staff to claim” chat message |
+| **Reward eligibility** | Configurable top-N places get a short congrats chat; staff see a private summary |
 | **Admin ops** | Status, time-jumps (`startnow` / `ffanow` / `endnow` / `phase`), force TP/ceremony, reload |
 | **Vanish** | Essentials/EssentialsX when present; else metadata `vanished` fallback |
 | **SQLite storage** | Event times/phase, kills, metrics — survives restarts mid-event |
@@ -47,7 +47,7 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 3. **FFA lead-up** — Title announcements as the finale approaches.
 4. **Finale** — Eligible players are teleported **once** onto a ring/oval in the PvP arena. The arena is open; you can leave. Kills still count everywhere until the end.
 5. **Outside the cuboid after FFA** — Short action-bar nudge (e.g. where the finale is / warp hint). Configurable.
-6. **End** — Scoring freezes. Everyone online gets a title with **place + kills**. Top 3 get gold/silver/bronze styling and a heroic sound. Top-N (config) also get a **reward eligibility** chat message. Offline players keep rank (kills persist); staff see a summary for claims.
+6. **End** — Scoring freezes. Everyone online gets a title with **place + kills**. Top 3 get gold/silver/bronze styling and a heroic sound. Top-N (config) get a short **congrats** chat. Offline players keep rank (kills persist); staff with admin perm get a private placer list.
 
 ### For admins (mental model)
 
@@ -238,19 +238,36 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 | `ffa.announce-lead-seconds` | `3600` (60m) | Start FFA titles this long before FFA |
 | `ffa.announce-interval-seconds` | `600` (10m) | Title interval |
 | `ffa.outside-actionbar-seconds` | `60` | Action bar duration for players outside cuboid after FFA |
-| `ffa.max-diameter-fraction` | `0.75` | Max ring diameter vs longest cuboid horizontal side |
+| `ffa.max-diameter-fraction` | `0.75` | Cap ring diameter vs longest cuboid horizontal side (many players) |
+| `ffa.min-player-spacing` | `8` | Target distance between adjacent ring mates; few players → tight ring; many grow up to diameter cap |
 | `ffa.min-air-above` | `2` | Air blocks required above spawn feet |
-| `ffa.y-search-range` | `12` | Vertical search around center Y |
+| `ffa.y-search-range` | `12` | Vertical search around center Y (full cuboid height if local fails) |
+| `ffa.ring-margin-blocks` | `2` | Keep ring inside cuboid edges |
 | `arena.*` | wand/commands | World, pos1, pos2, centerspawn |
 | `storage.file` | `data.db` | SQLite file under plugin folder |
 | `compass.*` / `wand.*` | materials | Item materials / CMD |
-| `tab.scoreboard.lines` | indexes 3–5 | Lines written into TAB scoreboard + placeholders |
-| `tab.bossbar.enabled` | true | Event bossbar via TAB |
+| `tab.scoreboard.offset` | `3` | First 0-based row on the **existing** TAB board for relative injects |
+| `tab.scoreboard.top-slots` | `3` | How many leaders to expose as `%top1_*` … `%topN_*` |
+| `tab.scoreboard.empty-name` / `empty-kills` | `—` / `0` | Empty rank slots |
+| `tab.scoreboard.lines` | top-3 + phase row | Injected templates (strings from offset, or maps with absolute `line:`) |
+| `tab.bossbar.enabled` | true | Event bossbar via TAB (**adds** a bar; does not replace other TAB bars) |
 | `effects.*` | enabled | Sounds/particles per action |
 
-**Scoreboard placeholders:** `%top_killer%`, `%top_kills%`, `%phase%`  
-**Bossbar placeholders (lang):** `%countdown%`, `%top_killer%`  
+**Scoreboard inject (defaults):** lines at offset 3–6 — `#1` / `#2` / `#3` kill leaders + phase countdown.  
+Does **not** create or `showScoreboard` a private board; only overwrites the configured rows on whatever TAB layout the player already has, and restores them when the event UI clears.
+
+| Placeholder | Meaning |
+|-------------|---------|
+| `%top1_name%` `%top1_kills%` `%top1_place%` … through `top-slots` | Ranked leaders (empty → empty-name/kills) |
+| `%top_killer%` / `%top_kills%` | Aliases for slot **#1** (bossbar + legacy templates) |
+| `%phase%` | Localized phase label (`lang.yml` `phase.*`) |
+| `%remaining%` | Time until **next phase change** (countdown→start, hunt→FFA, FFA→end) |
+| `%until_end%` | Time until event end (optional in templates) |
+
+**Bossbar placeholders (lang):** `%countdown%` (pre-start, same as remaining-to-start), `%top_killer%`, `%top_kills%`, `%remaining%` (next phase), `%until_end%`  
 **Reward placeholders (lang):** `%place%`, `%kills%`, `%player%`, `%max_place%`
+
+Tip: make the last inject line name the destination (e.g. “Finale in %remaining%”) — `%remaining%` alone is the clock, not the noun.
 
 ### `lang.yml` (all player-facing text)
 
@@ -284,11 +301,9 @@ Toggle globally with `effects.enabled`, or per-effect sound/particle `enabled` f
 
 ## Rewards
 
-At end ceremony, players with dense-rank **place ≤ `rewards.max-place`** (if enabled) receive a chat message such as:
+At end ceremony, players with dense-rank **place ≤ `rewards.max-place`** (if enabled) receive a short congrats chat (place + kills only — no claim/ops wording). Copy is in `lang.yml` (`rewards.eligible`).
 
-> Congrats! You scored #1 with 17 kills and are eligible for a reward. Please contact staff to claim your reward.
-
-Copy is fully in `lang.yml` (`rewards.eligible`). Online staff with `preciv.admin` get a short eligible list. Full list is also logged to console (includes offline winners by name).
+Online staff with `preciv.admin` get a private placer summary (`rewards.staff-summary-*`). Full list is also logged to console (includes offline winners by name).
 
 This does **not** run prize commands or touch economy — hand out rewards manually (or add command hooks later).
 
@@ -338,7 +353,12 @@ Teleported **once** when FFA starts if the player is:
 - **Not vanished** (Essentials if present, else metadata `vanished`)  
 - **Without** `preciv.ffa.tp.bypass`  
 
-Spawns: circle/oval inside cuboid around centerspawn; multi-ring / random fallback if points would stack under 1 block; diameter capped at 75% of longest cuboid side; standable Y near center Y.
+Spawns:
+
+- Ellipse around centerspawn, inside the cuboid with margin  
+- **Size scales with player count** — target spacing `ffa.min-player-spacing` between neighbors; grows up to `max-diameter-fraction` of the longest cuboid side for large FFAs  
+- Multi-ring / random dry columns if points would stack under 1 block  
+- Feet need solid **non-liquid** floor + clear air column (`min-air-above`); no invented Y on water/lava  
 
 List candidates live: `/preciv admin eligible`.
 
@@ -370,7 +390,16 @@ Changing start/end/FFA times clears both flags so a new schedule can fire again.
 
 ## Permissions for TAB / display
 
-TAB must be installed and its bossbar/scoreboard features available. This plugin creates/updates a TAB bossbar and scoreboard lines through the TAB API. Align `tab.scoreboard.lines` indexes with free rows on your existing TAB layout.
+TAB must be installed with **bossbar** and **scoreboard** features enabled.
+
+| What we do | What we do **not** do |
+|------------|------------------------|
+| Create an API bossbar and `addPlayer` so it **stacks** with config bars | Replace other TAB bossbars |
+| `Line.setText` on free rows of the **active/registered** TAB scoreboard | `showScoreboard` a private board that wipes the server layout |
+
+Set `tab.scoreboard.offset` (or absolute `line:` keys) to free rows on your existing TAB scoreboard config. Leave unused rows alone so the rest of the layout stays intact.
+
+HUD `%remaining%` is **until the next phase** (not full event length). Bossbar fill tracks the **current phase segment**. Pre-start countdown title still says “starts in …”.
 
 ---
 
@@ -381,9 +410,13 @@ TAB must be installed and its bossbar/scoreboard features available. This plugin
 | Plugin doesn’t load on Spigot | **Paper only** — needs `paper-plugin.yml` |
 | “Missing dependency TAB / PvPManager” | Install both; names must match |
 | SQLite fails first boot | Allow outbound HTTPS for Paper library download (then cached) |
-| No bossbar | TAB installed? `tab.bossbar.enabled`? Event in countdown/hunt/FFA? |
+| No bossbar | TAB installed? Bossbar feature on? `tab.bossbar.enabled`? Event in countdown/hunt/FFA? |
+| Event lines wiped the whole scoreboard | Old behavior; current build **injects only**. Update jar; free rows at `offset` must exist on the TAB board |
+| Scoreboard shows only blank / wrong rows | `offset` / `line` indices past the board length? Enable TAB scoreboard feature? |
+| Countdown looks like “total event left” | `%remaining%` is next-phase time; rename template (e.g. “Finale in …”) if players misread it |
 | No kills counting | Between start and end? PvPManager resolving killer? |
-| Nobody teleported at FFA | `/preciv admin eligible` — Survival + not vanished + no bypass? Arena world loaded? Centerspawn set? |
+| Nobody teleported at FFA | `/preciv admin eligible` — Survival + not vanished + no bypass? Arena world loaded? Centerspawn set? Dry standable ground in cuboid? |
+| FFA ring too huge with 2 players | `ffa.min-player-spacing` (default 8); diameter cap only applies when N is large |
 | Staff got FFA TP’d while vanished | Essentials installed? `/preciv admin status` vanish backend? |
 | Ceremony spam after restart | Should not happen — check `ceremony_done` in status; file a bug if unset |
 | Compass missing after death | Event still active? Inv full? Check action bar hint |

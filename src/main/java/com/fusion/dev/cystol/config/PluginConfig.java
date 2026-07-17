@@ -211,19 +211,90 @@ public final class PluginConfig {
         return cfg().getBoolean("tab.bossbar.enabled", true);
     }
 
+    /**
+     * Base 0-based index on the existing TAB scoreboard for relative inject lines
+     * (entries without an absolute {@code line} key).
+     */
+    public int scoreboardOffset() {
+        return Math.max(0, cfg().getInt("tab.scoreboard.offset", 3));
+    }
+
+    /**
+     * How many leaderboard slots to expose as {@code %topN_name%} / {@code %topN_kills%}
+     * (and dense {@code %topN_place%}). Default 3.
+     */
+    public int scoreboardTopSlots() {
+        return Math.max(1, Math.min(15, cfg().getInt("tab.scoreboard.top-slots", 3)));
+    }
+
+    /** Placeholder value when a top-N slot has no killer yet. */
+    public String scoreboardEmptyName() {
+        String v = cfg().getString("tab.scoreboard.empty-name", "—");
+        return v == null || v.isBlank() ? "—" : v;
+    }
+
+    public String scoreboardEmptyKills() {
+        String v = cfg().getString("tab.scoreboard.empty-kills", "0");
+        return v == null ? "0" : v;
+    }
+
+    /**
+     * Lines to inject into the existing TAB board — never a replacement scoreboard.
+     *
+     * <p>Each entry is either:
+     * <ul>
+     *   <li>a plain string → placed at {@code offset + relativeIndex}</li>
+     *   <li>a map with {@code text} and optional absolute {@code line} (0-based)</li>
+     * </ul>
+     * Relative entries only consume the relative counter; absolute {@code line} overrides
+     * do not shift following relative slots.
+     */
     public List<ScoreboardLine> scoreboardLines() {
         List<ScoreboardLine> lines = new ArrayList<>();
-        List<?> raw = cfg().getMapList("tab.scoreboard.lines");
+        int offset = scoreboardOffset();
+        List<?> raw = cfg().getList("tab.scoreboard.lines");
+        if (raw == null || raw.isEmpty()) {
+            // Legacy: map-list only configs
+            raw = cfg().getMapList("tab.scoreboard.lines");
+        }
+        if (raw == null) {
+            return Collections.unmodifiableList(lines);
+        }
+        int relative = 0;
         for (Object o : raw) {
+            if (o instanceof String s) {
+                if (!s.isBlank()) {
+                    lines.add(new ScoreboardLine(offset + relative, s));
+                }
+                relative++;
+                continue;
+            }
             if (o instanceof java.util.Map<?, ?> map) {
-                Object lineObj = map.get("line");
                 Object textObj = map.get("text");
-                if (lineObj instanceof Number n && textObj != null) {
-                    lines.add(new ScoreboardLine(n.intValue(), String.valueOf(textObj)));
+                if (textObj == null) {
+                    // bare string-like values sometimes land as single-key maps; skip empty
+                    continue;
+                }
+                String text = String.valueOf(textObj);
+                Object lineObj = map.get("line");
+                if (lineObj instanceof Number n) {
+                    int idx = n.intValue();
+                    if (idx >= 0) {
+                        lines.add(new ScoreboardLine(idx, text));
+                    }
+                    // absolute line does not advance relative counter
+                } else {
+                    lines.add(new ScoreboardLine(offset + relative, text));
+                    relative++;
                 }
             }
         }
         return Collections.unmodifiableList(lines);
+    }
+
+    /** Target chord (block) between adjacent FFA ring mates; ring shrinks for few players. */
+    public double minPlayerSpacing() {
+        return Math.max(1.0, cfg().getDouble("ffa.min-player-spacing", 8.0));
     }
 
     public Optional<Instant> configuredStart() {

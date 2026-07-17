@@ -109,6 +109,21 @@ public final class KillService {
         return Optional.ofNullable(topCache);
     }
 
+    /**
+     * First {@code n} entries of the kill leaderboard (sorted by kills, dense place on each row).
+     * Not “everyone with place ≤ n” — always at most {@code n} rows for scoreboard slots.
+     */
+    public List<DenseRanking.Entry> top(int n) {
+        if (n <= 0) {
+            return List.of();
+        }
+        List<DenseRanking.Entry> all = ranking();
+        if (all.isEmpty()) {
+            return List.of();
+        }
+        return all.subList(0, Math.min(n, all.size()));
+    }
+
     private synchronized void refreshRankingCache() {
         // Always recompute when called under dirty flag; concurrent credits may set dirty again after.
         List<DenseRanking.Entry> ranked = DenseRanking.rank(new ArrayList<>(kills.values()));

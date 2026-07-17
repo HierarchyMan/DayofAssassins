@@ -124,9 +124,92 @@ public final class EventTimeline {
         return Math.max(0L, end.getEpochSecond() - now.getEpochSecond());
     }
 
+    /**
+     * Instant when the current phase ends (next boundary), if known.
+     * <ul>
+     *   <li>COUNTDOWN → start</li>
+     *   <li>HUNT → FFA moment (or end if FFA collapses to end)</li>
+     *   <li>FFA → end</li>
+     *   <li>IDLE / ENDED → empty</li>
+     * </ul>
+     */
+    public Optional<Instant> nextPhaseBoundary(Instant now) {
+        Objects.requireNonNull(now, "now");
+        EventPhase phase = phaseAt(now);
+        return switch (phase) {
+            case COUNTDOWN -> Optional.ofNullable(start);
+            case HUNT -> {
+                Optional<Instant> ffa = ffaMoment();
+                if (ffa.isPresent()) {
+                    yield ffa;
+                }
+                yield Optional.ofNullable(end);
+            }
+            case FFA -> Optional.ofNullable(end);
+            case IDLE, ENDED -> Optional.empty();
+        };
+    }
+
+    /**
+     * Whole seconds until the next phase change (not total time until event end).
+     * Use this for HUD “countdown” copy so Hunt shows time-to-FFA, FFA shows time-to-end, etc.
+     */
+    public long secondsUntilNextPhase(Instant now) {
+        Objects.requireNonNull(now, "now");
+        return nextPhaseBoundary(now)
+                .map(b -> Math.max(0L, b.getEpochSecond() - now.getEpochSecond()))
+                .orElse(0L);
+    }
+
+    /**
+     * Fill progress for the <em>current</em> phase segment (0 at segment start → 1 at next boundary).
+     * COUNTDOWN uses the announce-lead window; HUNT fills start→FFA; FFA fills FFA→end.
+     */
+    public double phaseFillProgress(Instant now, long announceLeadSeconds) {
+        Objects.requireNonNull(now, "now");
+        EventPhase phase = phaseAt(now);
+        return switch (phase) {
+            case COUNTDOWN -> countdownFillProgress(now, announceLeadSeconds);
+            case HUNT -> {
+                if (start == null) {
+                    yield 0.0;
+                }
+                Instant boundary = ffaMoment().orElse(end);
+                if (boundary == null) {
+                    yield 0.0;
+                }
+                yield segmentFill(now, start, boundary);
+            }
+            case FFA -> {
+                Instant from = ffaMoment().orElse(start);
+                if (from == null || end == null) {
+                    yield 0.0;
+                }
+                yield segmentFill(now, from, end);
+            }
+            case ENDED -> 1.0;
+            case IDLE -> 0.0;
+        };
+    }
+
     public boolean killsCountAt(Instant now) {
         EventPhase p = phaseAt(now);
         return p == EventPhase.HUNT || p == EventPhase.FFA;
+    }
+
+    private static double segmentFill(Instant now, Instant from, Instant to) {
+        if (now.isBefore(from)) {
+            return 0.0;
+        }
+        if (!now.isBefore(to)) {
+            return 1.0;
+        }
+        long total = to.getEpochSecond() - from.getEpochSecond();
+        if (total <= 0) {
+            return 1.0;
+        }
+        long elapsed = now.getEpochSecond() - from.getEpochSecond();
+        return clamp01((double) elapsed / (double) total);
     }
 
     private static double clamp01(double v) {

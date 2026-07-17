@@ -82,12 +82,12 @@ Leaving the server is fine — **still ranked** (offline kills persist; offline 
 | System | Behavior |
 |--------|----------|
 | **Clock / state** | COUNTDOWN → HUNT → FFA → ENDED; **fully persisted** (SQLite) |
-| **TAB bossbar** | Pre-start: countdown + **filling** bar. Live: top killer + time progress |
-| **TAB scoreboard** | Event lines at configured indices |
+| **TAB bossbar** | Pre-start: countdown + **filling** bar (stacks with existing TAB bars). Live: #1 killer + **time until next phase**; fill tracks **current phase segment** |
+| **TAB scoreboard** | **Inject** top-N + phase lines at configured indices/offset on the **existing** TAB board (never replace the whole board) |
 | **Compass** | Track GUI; one only; bound to inv; death: not dropped, re-given on respawn |
 | **Kills** | Via **PvPManager API**; window start→end; **persist SQLite**; no kill-message edits |
-| **FFA announce** | Titles before FFA moment |
-| **FFA TP** | Once: unvanished survival players without bypass perm → ring/oval/multi-ring/random safe spots |
+| **FFA announce** | Titles before FFA moment (“final deathmatch begins in …”) |
+| **FFA TP** | Once: unvanished survival, no bypass → ring sized by **player count** + diameter cap; **dry** standable Y only |
 | **Outside-cuboid nudge** | After FFA: ~1 min actionbar for players outside cuboid (configurable message) |
 | **End ceremony** | Shared-place ranking; titles+sounds for all; top 3 medal + heroic |
 | **Metrics** | SQLite |
@@ -151,24 +151,34 @@ At FFA: perform TP + optional start title.
 
 ## Display: TAB API (**hard depend**)
 
-`plugin.yml`: **`depend: [TAB]`** (required).
+`paper-plugin.yml`: hard depend on **TAB** (required). Scoreboard + bossbar features must be enabled in TAB.
 
-### Scoreboard
+### Scoreboard — inject, do not replace
 
-- Insert event lines at **configured line indices** on the existing TAB board  
-- Clear when event not showing those lines  
+- Write only configured rows via TAB `Line#setText` on the player’s existing / registered board  
+- **Never** `showScoreboard` a private board that wipes server layout  
+- On clear: restore original text for those indices  
+- Config: `tab.scoreboard.offset` + ordered `lines` (relative), or absolute `line:` keys  
+- Default injects: **top 1–3** kill leaders + phase / countdown row  
+- Placeholders: `%top1_name%`…`%topN_*` (N = `top-slots`), `%top_killer%` alias for #1, `%phase%`, `%remaining%`, `%until_end%`  
+
+### Timers on HUD
+
+| Placeholder | Meaning |
+|-------------|---------|
+| `%remaining%` | Seconds until **next phase boundary** (COUNTDOWN→start, HUNT→FFA, FFA→end) |
+| `%until_end%` | Seconds until event end (optional; not the default continuous clock) |
+
+Templates should ideally name the **destination** (“Finale in …”), not only print a bare duration next to the current phase.
 
 ### Bossbar
 
 | Mode | When | Title | Progress |
 |------|------|-------|----------|
-| **Countdown** | Before start | Starts in Xd Xh Xm… | **FILLING** toward start (`elapsed/total` if announce window known, else fill from first schedule → start; **not draining**) |
-| **Live** | start → end | **#1 killer** name | Time through event (start→end); at start empty/low → **fills or drains per live rule** — live phase: prefer **remaining** display via title; bar progress: **fill from start to end** = `(now-start)/(end-start)` so bar **fills** as event progresses |
+| **Countdown** | Before start | “Starts in …” (`%countdown%`) | **FILLING** over announce-lead → start (**not draining**) |
+| **Live** | Hunt / FFA | **#1 killer** + `%remaining%` (next phase) | **Phase segment fill** (Hunt: start→FFA; FFA: FFA→end) via `phaseFillProgress` |
 
-**Pre-start specifically:** user asked for a **filling** bar (not draining) until start.
-
-Default live: progress = `(now - start) / (end - start)` → fills over the event.  
-Title still shows top killer during live.
+API bar is **added** with `addPlayer` so it stacks alongside config-defined TAB bars.
 
 ---
 
@@ -263,14 +273,14 @@ Cuboid is used to:
 
 **Pattern algorithm:**
 
-1. Max **circle/oval diameter ≤ 75% of longest cuboid horizontal side**  
+1. Max **circle/oval diameter ≤ `max-diameter-fraction`** of longest cuboid horizontal side (upper bound)  
 2. Ellipse fits inside cuboid with margin; prefer near **centerspawn**  
-3. Even angles for N players; **≥2 air** above feet; Y near center Y with **bounded performant scan**  
-4. If horizontal distance between assigned points would be **&lt; 1 block**:  
-   - use **multiple concentric rings**, and/or  
-   - **random viable** standable locations inside cuboid  
-5. **No minimum spacing rule** beyond that congestion fallback  
-6. No safe spot → fallback center / log; don’t soft-lock event  
+3. **Player-count scaling:** target chord ≈ `min-player-spacing` between adjacent ring mates so 2 players stand close enough to see each other; radius grows with N until the diameter cap  
+4. Even angles for N players; **≥2 air** above feet; Y near center Y with bounded scan, then full cuboid column  
+5. Floor must be solid and **non-liquid**; body column non-liquid / non-waterlogged — **never invent feet Y on water**  
+6. If a planned column is wet/unsafe: nudge nearby → center → random dry columns; only then skip/pad  
+7. If horizontal distance between assigned points would be **&lt; 1 block**: multi-ring and/or random viable samples inside the ellipse  
+8. Soft-lock avoided: pad last good location if some columns fail; log when the arena has no dry ground
 
 ### After FFA — outside cuboid actionbar
 
@@ -293,7 +303,7 @@ For players **outside** the cuboid when/after FFA (and still in FFA phase):
 | Kill message edits | **Never** |
 | Cuboid enter/leave kill rules | **Never** |
 | Spectators | **No** |
-| Prize / command hooks | **Message only** — top-N dense places get claim-staff chat; no economy/crates yet |
+| Prize / command hooks | **Message only** — top-N get short congrats; staff get private list; no economy/crates yet |
 
 ---
 
@@ -391,7 +401,8 @@ ffa:
   announce-lead-seconds: 3600       # 60 minutes before FFA
   announce-interval-seconds: 600    # every 10 minutes
   outside-actionbar-seconds: 60
-  max-diameter-fraction: 0.75       # of longest cuboid horizontal side
+  max-diameter-fraction: 0.75       # diameter cap (many players)
+  min-player-spacing: 8             # chord between neighbors; shrinks ring for small N
   min-air-above: 2
   y-search-range: 12
   ring-margin-blocks: 2
@@ -408,7 +419,15 @@ storage:
 
 tab:
   scoreboard:
-    lines: []
+    offset: 3
+    top-slots: 3
+    empty-name: "—"
+    empty-kills: "0"
+    lines:
+      - "&c&l#1 &f%top1_name% &8(%top1_kills%)"
+      - "&6#2 &f%top2_name% &8(%top2_kills%)"
+      - "&e#3 &f%top3_name% &8(%top3_kills%)"
+      - "&7%phase% &8| &f%remaining%"   # remaining = until next phase
   bossbar:
     enabled: true
 
@@ -447,12 +466,12 @@ com.fusion.dev.cystol
 │   └── KillService               # memory + SQLite
 ├── compass/
 ├── arena/
-│   ├── ArenaRegion
+│   ├── CuboidBounds / RingSpawnMath  # N-scaled spacing + diameter cap
 │   ├── ArenaWandListener
-│   └── FfaSpawnService           # multi-ring / random / 75% diameter
+│   └── FfaSpawnService               # dry Y, batched TP
 ├── display/
-│   ├── TabScoreboardService
-│   └── TabBossBarService         # filling pre-start bar
+│   ├── EventDisplayRenderer          # pure bossbar + inject templates
+│   └── TabDisplayService             # TAB inject + stacked bossbar
 ├── ceremony/
 │   └── EndCeremonyService        # dense rank, titles, sounds
 ├── fx/
@@ -475,15 +494,15 @@ com.fusion.dev.cystol
 ```
 Admin: start + end (+ arena wand/center). FFA = end − 30m (config).
         ↓
-Countdown filling bossbar
+Countdown filling bossbar (stacks) + optional inject rows
         ↓
-Hunt: compass + PvPManager kills → SQLite
+Hunt: compass + PvPManager kills → SQLite; HUD top-N inject + phase clock
         ↓
-Announce titles → one ring TP (survival, unvanished, no bypass)
+Announce titles → one N-scaled dry ring TP (survival, unvanished, no bypass)
         ↓
 Open world FFA stretch; outside cuboid → 1m actionbar hint
         ↓
-End: shared places; all titles+sounds; top3 medal+heroic
+End: shared places; all titles+sounds; top3 medal+heroic; restore inject rows
 ```
 
 ---
@@ -496,3 +515,5 @@ End: shared places; all titles+sounds; top3 medal+heroic
 | 2026-07-17 | TAB, Triumph GUI, UX/lang, effects |
 | 2026-07-17 | Arena wand, ceremony, FFA announce |
 | 2026-07-17 | **Decisions locked:** FFA = before end (e.g. 30m); shared places; no TP lock; cuboid spawn-only; PvPManager kills; SQLite full event persist; TAB hard depend; filling pre-start bossbar; multi-ring spawn algo; outside actionbar; compass respawn re-give; no spectators/prizes yet |
+| 2026-07-17 | **Display:** inject-only scoreboard (top-N configurable); bossbar stacks; `%remaining%` = next phase; phase-segment bar fill |
+| 2026-07-17 | **FFA spawn:** `min-player-spacing` scaling; refuse water/lava feet; dry-column rescue |
