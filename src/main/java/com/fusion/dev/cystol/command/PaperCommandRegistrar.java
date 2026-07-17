@@ -12,9 +12,7 @@ import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
@@ -90,31 +88,13 @@ public final class PaperCommandRegistrar {
             CommandContext<CommandSourceStack> ctx,
             SuggestionsBuilder builder
     ) {
-        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
-        String[] parts = remaining.isBlank() ? new String[0] : remaining.split("\\s+", -1);
-        List<String> suggestions = new ArrayList<>();
-
-        if (parts.length <= 1) {
-            suggestions.addAll(List.of("compass", "killtop", "admin"));
-        } else if (parts[0].equals("admin")) {
-            if (parts.length == 2) {
-                suggestions.addAll(List.of("set", "wand"));
-            } else if (parts.length >= 3 && parts[1].equals("set")) {
-                if (parts.length == 3) {
-                    suggestions.addAll(List.of(
-                            "starttime", "endtime", "ffatime", "centerspawn", "pos1", "pos2"
-                    ));
-                } else if (parts.length == 4 && parts[2].equals("ffatime")) {
-                    suggestions.add("clear");
-                }
-            }
-        }
-
-        String prefix = parts.length == 0 ? "" : parts[parts.length - 1];
+        // Greedy-string: suggest full remaining (not last token only) or prior args are wiped.
+        List<String> suggestions = PrecivSuggestions.complete(
+                ctx.getSource().getSender(),
+                builder.getRemaining()
+        );
         for (String s : suggestions) {
-            if (s.toLowerCase(Locale.ROOT).startsWith(prefix)) {
-                builder.suggest(s);
-            }
+            builder.suggest(s);
         }
         return builder.buildFuture();
     }

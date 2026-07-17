@@ -1,6 +1,5 @@
 package com.fusion.dev.cystol.command;
 
-import com.fusion.dev.cystol.arena.FfaSpawnService;
 import com.fusion.dev.cystol.compass.CompassService;
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
@@ -23,7 +22,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 public final class PrecivCommand implements CommandExecutor, TabCompleter {
 
@@ -220,20 +218,17 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) {
-            return filter(List.of("compass", "killtop", "admin"), args[0]);
+        // Legacy Bukkit path (unused by Paper Brigadier). Rebuild remaining for shared logic.
+        String remaining = args == null || args.length == 0
+                ? ""
+                : String.join(" ", args);
+        List<String> full = PrecivSuggestions.complete(sender, remaining);
+        // Bukkit TabCompleter expects only the current token, not full remaining
+        List<String> tokens = new ArrayList<>(full.size());
+        for (String f : full) {
+            int sp = f.lastIndexOf(' ');
+            tokens.add(sp < 0 ? f : f.substring(sp + 1));
         }
-        if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-            return filter(List.of("set", "wand"), args[1]);
-        }
-        if (args.length == 3 && args[0].equalsIgnoreCase("admin") && args[1].equalsIgnoreCase("set")) {
-            return filter(List.of("starttime", "endtime", "ffatime", "centerspawn", "pos1", "pos2"), args[2]);
-        }
-        return List.of();
-    }
-
-    private static List<String> filter(List<String> options, String prefix) {
-        String p = prefix.toLowerCase(Locale.ROOT);
-        return options.stream().filter(s -> s.startsWith(p)).collect(Collectors.toCollection(ArrayList::new));
+        return tokens;
     }
 }
