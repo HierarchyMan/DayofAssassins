@@ -22,6 +22,8 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 | **Reward eligibility** | Configurable top-N places get a short congrats chat; staff see a private summary |
 | **Admin ops** | Status, time-jumps (`startnow` / `ffanow` / `endnow` / `phase`), force TP/ceremony, reload |
 | **Vanish** | Essentials/EssentialsX when present; else metadata `vanished` fallback |
+| **Hunt teleport lock** | Blocks warp/home/tp commands & plugin teleports outside spawn + arena during hunt (`preciv.teleport.bypass` to exempt) |
+| **Spawn safe zone** | Admins mark a spawn cuboid; players inside it are exempt from the hunt teleport lock |
 | **SQLite storage** | Event times/phase, kills, metrics — survives restarts mid-event |
 | **Fully configurable text** | All messages, item lore, menu titles in `lang.yml` |
 | **Effects** | Sounds/particles for compass, menus, kills, FFA, end (config toggles) |
@@ -29,7 +31,6 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 
 ### Explicitly not included
 
-- Teleport lock / spawn safe zones  
 - Arena block reset (arena is normal world)  
 - Custom death handling (except compass no-drop + respawn re-give)  
 - Kill chat message edits  
@@ -45,7 +46,7 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 1. **Before start** — Read `/event`. Optional filling bossbar: “starts in …”
 2. **Hunt** — Receive the Assassin’s Compass (auto or `/preciv compass`). Right-click → pick a target → hunt → get kills. Track one player at a time. Leaderboard via `/preciv killtop`.
 3. **FFA lead-up** — Title announcements as the finale approaches.
-4. **Finale** — Eligible players are teleported **once** onto a ring/oval in the PvP arena. The arena is open; you can leave. Kills still count everywhere until the end.
+4. **Finale** — Eligible players are teleported **once** onto a ring/oval in the PvP arena. The arena is open; you can leave. During FFA, a kill only counts if **both** killer and victim are inside the arena cuboid (hunt-phase kills still count anywhere).
 5. **Outside the cuboid after FFA** — Short action-bar nudge (e.g. where the finale is / warp hint). Configurable.
 6. **End** — Scoring freezes. Everyone online gets a title with **place + kills**. Top 3 get gold/silver/bronze styling and a heroic sound. Top-N (config) get a short **congrats** chat. Offline players keep rank (kills persist); staff with admin perm get a private placer list.
 
@@ -189,6 +190,7 @@ Description text comes from `lang.yml`.
 | `/preciv admin wand` | Arena selection wand |
 | `/preciv admin set pos1` / `pos2` | Cuboid corners at your feet |
 | `/preciv admin set centerspawn` | FFA ring center at your location |
+| `/preciv admin set spawnpos1` / `spawnpos2` | Spawn safe-zone corners at your feet (exempt from hunt TP lock) |
 | `/preciv admin set starttime <yyyy/MM/dd HH:mm:ss>` | Event start (UTC+0) |
 | `/preciv admin set endtime <yyyy/MM/dd HH:mm:ss>` | Event end (UTC+0) |
 | `/preciv admin set ffatime <…>` / `clear` | Optional FFA time override |
@@ -225,6 +227,7 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 | `preciv.killtop` | true | `/preciv killtop` |
 | `preciv.admin` | op | All admin setup + ops commands |
 | `preciv.ffa.tp.bypass` | false | Skip FFA mass teleport |
+| `preciv.teleport.bypass` | op | Exempt from hunt-phase teleport lock |
 
 ---
 
@@ -247,6 +250,9 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 | `ffa.y-search-range` | `12` | Vertical search around center Y (full cuboid height if local fails) |
 | `ffa.ring-margin-blocks` | `2` | Keep ring inside cuboid edges |
 | `arena.*` | wand/commands | World, pos1, pos2, centerspawn |
+| `spawn.*` | wand/commands | Spawn safe-zone: `world`, `pos1`, `pos2`, `configured` — exempt from hunt TP lock |
+| `teleport-lock.enabled` | `true` | Block teleport commands/plugins outside spawn+arena during hunt |
+| `teleport-lock.commands` | spawn/home/back/rtp/warp/tp… | Lowercase command labels blocked when outside the safe zones |
 | `storage.file` | `data.db` | SQLite file under plugin folder |
 | `compass.*` / `wand.*` | materials | Item materials / CMD |
 | `tab.scoreboard.offset` | `3` | First 0-based row on the **existing** TAB board for relative injects |
@@ -451,7 +457,8 @@ com.fusion.dev.cystol
 ├── command/                  # Brigadier + admin/player commands (AdminOps)
 ├── event/                    # Timeline, scheduler, phases
 ├── compass/                  # Item, GUI (Triumph), listeners
-├── kill/                     # KillService, dense ranking, PvPManager hook
+├── kill/                     # KillService, dense ranking, PvPManager hook, KillCreditRules
+├── teleport/                 # TeleportLockService + listener (hunt-phase lock)
 ├── arena/                    # Wand, cuboid, FFA spawn math
 ├── display/                  # TAB bossbar + scoreboard render
 ├── ceremony/                 # End titles / sounds / reward eligibility
