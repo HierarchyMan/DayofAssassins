@@ -115,8 +115,13 @@ public final class EventScheduler {
         if (phase != lastPhase) {
             onPhaseChange(lastPhase, phase, now);
             lastPhase = phase;
-            // Persist only on phase transitions (flags flush on markFfa/markCeremony/setters)
             eventManager.persist();
+        }
+
+        // Frozen schedule: no UI, announces, FFA TP, ceremony, or 1s progression work
+        if (phase == EventPhase.PAUSED || eventManager.isPaused()) {
+            tabDisplayService.clear();
+            return;
         }
 
         if (phase == EventPhase.COUNTDOWN || phase == EventPhase.HUNT || phase == EventPhase.FFA) {
@@ -185,6 +190,11 @@ public final class EventScheduler {
         if ((to == EventPhase.HUNT || to == EventPhase.FFA)
                 && from != EventPhase.HUNT && from != EventPhase.FFA) {
             compassListener.giveToAllOnline();
+        }
+        // Leave scoring (incl. pause): strip every Assassin's Compass (silent)
+        if ((from == EventPhase.HUNT || from == EventPhase.FFA)
+                && to != EventPhase.HUNT && to != EventPhase.FFA) {
+            compassListener.stripAllOnlineSilent();
         }
         // Hunt kickoff toast (not on recovery into already-running FFA)
         if (to == EventPhase.HUNT && from != EventPhase.HUNT) {

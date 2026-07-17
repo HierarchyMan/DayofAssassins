@@ -16,6 +16,7 @@ event:
 
 phase:
   idle: "Idle"
+  paused: "Paused"
   countdown: "Starting soon"
   hunt: "Hunt"
   ffa: "Finale"
@@ -36,6 +37,7 @@ bossbar:
 compass:
   already-have: "&cYou already have the Assassin's Compass."
   received: "&aYou received the Assassin's Compass."
+  not-during-event: "&7The Assassin's Compass is only available during the event."
   inv-full-actionbar: "&eInventory full! Free a slot, then use &f/preciv compass"
   tracking-selected: "&7Now tracking: &f%target%"
   other-world-actionbar: "&eYour target is in another world: &f%world%"
@@ -141,8 +143,11 @@ admin:
   pos1-set: "&aArena corner 1 set to &f%x% %y% %z%"
   pos2-set: "&aArena corner 2 set to &f%x% %y% %z%"
   wand-given: "&aArena wand given. Left-click corner 1, right-click corner 2."
-  invalid-time: "&cInvalid time. Use &fyyyy/MM/dd HH:mm:ss &c(UTC)"
+  invalid-time: "&cInvalid time. Use &fyyyy/MM/dd HH:mm:ss &c(UTC) or &f-r 1d2h5m"
   not-player: "&cOnly players can do that."
+  schedule-paused-hint: "&eSchedule updated — event is &cpaused&e. Use &f/preciv gui &eor &f/preciv admin unpause &ewhen ready."
+  paused-ok: "&eEvent &cpaused&e. No stages progress until unpause."
+  unpaused-ok: "&aEvent unpaused. Stage: &f%phase%"
   status:
     header: "&c&lDay of Assassins &7— status"
     phase: "&7Stage: &f%phase%"
@@ -171,7 +176,7 @@ admin:
   eligible-entry: "&7- &f%player%"
   clearkills-confirm: "&cThis wipes all kill scores. Run &f/preciv admin clearkills confirm &cto proceed."
   clearkills-ok: "&aAll kill scores cleared."
-  phase-usage: "&cUsage: /preciv admin phase <idle|countdown|hunt|ffa|ended>"
+  phase-usage: "&cUsage: /preciv admin phase <idle|paused|countdown|hunt|ffa|ended>"
   phase-ok: "&aSchedule adjusted. Stage: &f%phase%"
 
 wand:
@@ -179,3 +184,31 @@ wand:
   lore:
     - "&7Left-click: corner 1"
     - "&7Right-click: corner 2"
+
+host:
+  gui:
+    main:
+      title: "&8Day of Assassins — Host"
+      status:
+        name: "&c&lEvent status"
+      times:
+        name: "&eSchedule times"
+      rewards:
+        name: "&6Rewards"
+      ffa:
+        name: "&cFinale settings"
+    times:
+      title: "&8Schedule times"
+      prompt: "&eType &f%field%&e: &f%format%&e. &7Or &fcancel"
+      set-ok: "&a%field% set to &f%time% &7UTC &8(event paused)"
+      cleared: "&a%field% cleared. &8(event paused)"
+      cancelled: "&7Cancelled."
+      invalid: "&cCould not read that. Use &f%format% &cor &fcancel"
+      use-chat-clear: "&7To clear start/end, set a new time or clear via admin tools."
+    rewards:
+      title: "&8Rewards"
+    ffa:
+      title: "&8Finale settings"
+    common:
+      back: "&7← Back"
+      close: "&cClose"

@@ -48,9 +48,16 @@ public final class SqliteAccess {
                       ffa_override_epoch INTEGER,
                       phase TEXT,
                       ffa_teleported INTEGER NOT NULL DEFAULT 0,
-                      ceremony_done INTEGER NOT NULL DEFAULT 0
+                      ceremony_done INTEGER NOT NULL DEFAULT 0,
+                      paused INTEGER NOT NULL DEFAULT 0
                     )
                     """);
+            // Upgrade older DBs that lack paused
+            try {
+                st.executeUpdate("ALTER TABLE event_state ADD COLUMN paused INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS kills (
                       uuid TEXT PRIMARY KEY,

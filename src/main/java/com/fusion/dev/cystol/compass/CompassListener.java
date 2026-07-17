@@ -76,10 +76,6 @@ public final class CompassListener implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        EventPhase phase = eventManager.phase();
-        if (phase != EventPhase.HUNT && phase != EventPhase.FFA && phase != EventPhase.COUNTDOWN) {
-            return;
-        }
         Bukkit.getScheduler().runTaskLater(plugin, () -> onJoinDelayed(player), 10L);
     }
 
@@ -88,14 +84,17 @@ public final class CompassListener implements Listener {
             return;
         }
         EventPhase phase = eventManager.phase();
-        if (phase == EventPhase.COUNTDOWN) {
-            player.sendMessage(lang.msg("event.join-countdown"));
-            return;
-        }
+        // Off-event: silently strip leftover compasses (no chat)
         if (phase != EventPhase.HUNT && phase != EventPhase.FFA) {
+            if (compassService.playerHasCompass(player)) {
+                compassService.stripFromPlayer(player);
+            }
+            if (phase == EventPhase.COUNTDOWN) {
+                player.sendMessage(lang.msg("event.join-countdown"));
+            }
             return;
         }
-        // Mid-event orientation (chat) — high-impact for late joiners
+        // Mid-event orientation
         if (phase == EventPhase.HUNT) {
             player.sendMessage(lang.msg("hunt.join-message"));
         } else {
@@ -119,6 +118,15 @@ public final class CompassListener implements Listener {
                 startFullInvHint(player);
             }
         }
+    }
+
+    /** Event ended / idle — pull every Assassin's Compass and clear tracking. Silent. */
+    public void stripAllOnlineSilent() {
+        for (UUID id : hintTasks.keySet()) {
+            cancelHint(id);
+        }
+        fullInvHinted.clear();
+        compassService.stripFromAllOnline();
     }
 
     private void startFullInvHint(Player player) {
@@ -176,7 +184,11 @@ public final class CompassListener implements Listener {
         if (!compassService.isCompass(item)) {
             return;
         }
+        // Always cancel use; only open tracker while hunt/finale is live
         event.setCancelled(true);
+        if (!eventActive()) {
+            return;
+        }
         Player player = event.getPlayer();
         effects.play(player, EffectService.EffectKey.COMPASS_OPEN_GUI);
         compassGui.open(player);
@@ -220,6 +232,12 @@ public final class CompassListener implements Listener {
         }
         ItemStack stack = event.getItem().getItemStack();
         if (!compassService.isCompass(stack)) {
+            return;
+        }
+        // No event: destroy orphaned compass entities on touch
+        if (!eventActive()) {
+            event.setCancelled(true);
+            event.getItem().remove();
             return;
         }
         if (compassService.playerHasCompass(player)) {

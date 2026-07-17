@@ -37,6 +37,12 @@
     </repositories>
 
     <dependencies>
+        <!--
+          Paper provides Adventure (net.kyori.adventure.*) on the server classpath via paper-api.
+          Do NOT add adventure-platform-bukkit — that is Spigot-only and is NOT shipped by Paper.
+          Triumph ItemBuilder#name(Component) wrongly targets MinecraftComponentSerializer from that
+          platform jar; we set ItemMeta.displayName/lore via Paper-native APIs instead (GuiItems).
+        -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
@@ -55,6 +61,7 @@
             <version>3.19.10</version>
             <scope>provided</scope>
         </dependency>
+        <!-- Shaded + relocated; only inventory/holder APIs used. Name/lore set outside Triumph builders. -->
         <dependency>
             <groupId>dev.triumphteam</groupId>
             <artifactId>triumph-gui</artifactId>

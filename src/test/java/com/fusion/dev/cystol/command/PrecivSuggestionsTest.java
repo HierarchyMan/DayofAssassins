@@ -21,10 +21,11 @@ class PrecivSuggestionsTest {
 
     @Test
     void rootRespectsPermissionsAndPrefix() {
-        assertEquals(List.of("compass", "killtop", "admin"),
+        assertEquals(List.of("compass", "killtop", "gui", "admin"),
                 PrecivSuggestions.complete("", true, true, true, NOW));
         assertEquals(List.of("compass"), PrecivSuggestions.complete("", true, false, false, NOW));
         assertEquals(List.of("admin"), PrecivSuggestions.complete("ad", false, false, true, NOW));
+        assertEquals(List.of("gui"), PrecivSuggestions.complete("g", false, false, true, NOW));
         assertTrue(PrecivSuggestions.complete("", false, false, false, NOW).isEmpty());
         assertTrue(PrecivSuggestions.complete("admin ", true, true, false, NOW).isEmpty());
     }
@@ -64,12 +65,16 @@ class PrecivSuggestionsTest {
         String time = DateTimeFormatter.ofPattern("HH:mm:ss")
                 .format(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
 
-        assertEquals(List.of("admin set starttime " + date),
-                PrecivSuggestions.complete("admin set starttime ", true, true, true, NOW));
+        List<String> startOpts = PrecivSuggestions.complete("admin set starttime ", true, true, true, NOW);
+        assertTrue(startOpts.contains("admin set starttime " + date));
+        assertTrue(startOpts.stream().anyMatch(s -> s.contains("-r")));
         List<String> times = PrecivSuggestions.complete(
                 "admin set starttime " + date + " ", true, true, true, NOW);
         assertTrue(times.contains("admin set starttime " + date + " " + time));
         assertTrue(times.contains("admin set starttime " + date + " 00:00:00"));
+
+        List<String> rel = PrecivSuggestions.complete("admin set starttime -r ", true, true, true, NOW);
+        assertTrue(rel.stream().anyMatch(s -> s.endsWith("1h") || s.contains("1h")));
 
         List<String> ffa = PrecivSuggestions.complete("admin set ffatime ", true, true, true, NOW);
         assertTrue(ffa.contains("admin set ffatime clear"));

@@ -21,12 +21,14 @@ public final class PrecivSuggestions {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy/MM/dd");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    private static final List<String> ROOT = List.of("compass", "killtop", "admin");
+    private static final List<String> ROOT = List.of("compass", "killtop", "gui", "admin");
     private static final List<String> ADMIN = List.of(
             "status",
             "startnow",
             "ffanow",
             "endnow",
+            "pause",
+            "unpause",
             "forcetp",
             "forceceremony",
             "resetflags",
@@ -41,7 +43,7 @@ public final class PrecivSuggestions {
             "starttime", "endtime", "ffatime", "centerspawn", "pos1", "pos2"
     );
     private static final List<String> PHASES = List.of(
-            "idle", "countdown", "hunt", "ffa", "ended"
+            "idle", "paused", "countdown", "hunt", "ffa", "ended"
     );
     private static final List<String> TIME_SAMPLES = List.of("00:00:00", "12:00:00", "18:00:00");
 
@@ -133,7 +135,7 @@ public final class PrecivSuggestions {
         return switch (root) {
             case "compass" -> canCompass;
             case "killtop" -> canKilltop;
-            case "admin" -> canAdmin;
+            case "gui", "admin" -> canAdmin;
             default -> false;
         };
     }
@@ -143,19 +145,26 @@ public final class PrecivSuggestions {
         String dateSample = DATE.format(utc);
         String timeNow = TIME.format(utc);
 
-        // parts: admin set starttime [date] [time]
-        // index: 0     1   2         3      4
+        // parts: admin set starttime [date|-r|clear] [time|duration]
+        // index: 0     1   2         3                4
         if (parts.length == 4) {
-            List<String> opts = new ArrayList<>(2);
+            List<String> opts = new ArrayList<>(6);
             if (allowClear) {
                 opts.add("clear");
             }
+            opts.add("-r");
+            opts.add("-r 1h");
+            opts.add("-r 1d");
             opts.add(dateSample);
             return withHead(parts, 3, filterPrefix(opts, parts[3]));
         }
         if (parts.length == 5) {
             if (allowClear && parts[3].equalsIgnoreCase("clear")) {
                 return List.of();
+            }
+            if (parts[3].equalsIgnoreCase("-r")) {
+                return withHead(parts, 4, filterPrefix(
+                        List.of("1h", "30m", "1d", "1d2h", "2h30m"), parts[4]));
             }
             List<String> opts = new ArrayList<>(4);
             opts.add(timeNow);

@@ -339,6 +339,40 @@ public final class CompassService {
         drops.removeIf(this::isCompass);
     }
 
+    /** Remove every plugin compass from a player and clear their track target. Silent. */
+    public void stripFromPlayer(Player player) {
+        if (player == null) {
+            return;
+        }
+        targets.remove(player.getUniqueId());
+        lastLodestone.remove(player.getUniqueId());
+        ItemStack[] contents = player.getInventory().getContents();
+        for (int i = 0; i < contents.length; i++) {
+            if (isCompass(contents[i])) {
+                player.getInventory().setItem(i, null);
+            }
+        }
+        if (isCompass(player.getInventory().getItemInOffHand())) {
+            player.getInventory().setItemInOffHand(null);
+        }
+        if (isCompass(player.getItemOnCursor())) {
+            player.setItemOnCursor(null);
+        }
+    }
+
+    public void stripFromAllOnline() {
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            stripFromPlayer(p);
+        }
+        targets.clear();
+        lastLodestone.clear();
+    }
+
+    public void clearAllTargets() {
+        targets.clear();
+        lastLodestone.clear();
+    }
+
     public int countCompasses(Player player) {
         int n = 0;
         for (ItemStack stack : player.getInventory().getContents()) {

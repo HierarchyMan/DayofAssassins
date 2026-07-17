@@ -13,6 +13,7 @@ import java.util.logging.Logger;
 
 /**
  * In-memory event times + phase with SQLite flush.
+ * Schedule edits set {@link #paused()} so the clock does not advance side effects until {@link #unpause()}.
  */
 public final class EventManager {
 
@@ -26,6 +27,7 @@ public final class EventManager {
     private volatile EventPhase phase = EventPhase.IDLE;
     private final AtomicBoolean ffaTeleported = new AtomicBoolean(false);
     private final AtomicBoolean ceremonyDone = new AtomicBoolean(false);
+    private final AtomicBoolean paused = new AtomicBoolean(false);
 
     public EventManager(PluginConfig config, EventRepository repository, Logger logger) {
         this.config = config;
@@ -41,6 +43,7 @@ public final class EventManager {
             this.ffaOverride = firstNonNull(stored.ffaOverride(), config.configuredFfaOverride().orElse(null));
             this.ffaTeleported.set(stored.ffaTeleported());
             this.ceremonyDone.set(stored.ceremonyDone());
+            this.paused.set(stored.paused());
             refreshPhase(Instant.now());
             persist();
         } catch (SQLException e) {
@@ -64,10 +67,62 @@ public final class EventManager {
         return phase;
     }
 
+    public boolean isPaused() {
+        return paused.get();
+    }
+
+    /**
+     * Clock-derived phase ignoring pause (what would run if unpaused now).
+     */
+    public EventPhase livePhaseAt(Instant now) {
+        return timeline().phaseAt(now);
+    }
+
+    /**
+     * While paused, always {@link EventPhase#PAUSED}. Otherwise timeline phase.
+     */
     public EventPhase refreshPhase(Instant now) {
+        if (paused.get()) {
+            this.phase = EventPhase.PAUSED;
+            return this.phase;
+        }
         EventPhase next = timeline().phaseAt(now);
         this.phase = next;
         return next;
+    }
+
+    /**
+     * Freeze progression. Changing times always pauses so a past start cannot instantly open hunt.
+     */
+    public void pause() {
+        if (paused.getAndSet(true)) {
+            this.phase = EventPhase.PAUSED;
+            persist();
+            return;
+        }
+        this.phase = EventPhase.PAUSED;
+        persist();
+    }
+
+    /**
+     * Resume and snap to the live timeline phase for {@code now}.
+     *
+     * @return phase after unpause
+     */
+    public EventPhase unpause(Instant now) {
+        paused.set(false);
+        EventPhase next = timeline().phaseAt(Objects.requireNonNull(now, "now"));
+        this.phase = next;
+        persist();
+        return next;
+    }
+
+    public void setPaused(boolean value) {
+        if (value) {
+            pause();
+        } else {
+            unpause(Instant.now());
+        }
     }
 
     public Optional<Instant> start() {
@@ -90,34 +145,28 @@ public final class EventManager {
     public void setStart(Instant instant) {
         this.start = instant;
         config.setTimeStart(instant);
-        // new schedule resets ceremony/ffa flags if start is in future or reconfigured
         ceremonyDone.set(false);
         ffaTeleported.set(false);
-        refreshPhase(Instant.now());
-        persist();
+        pause(); // schedule edit freezes until host unpauses
     }
 
     public void setEnd(Instant instant) {
         this.end = instant;
         config.setTimeEnd(instant);
-        // End/FFA schedule change must allow FFA TP again and re-run ceremony later
         ceremonyDone.set(false);
         ffaTeleported.set(false);
-        refreshPhase(Instant.now());
-        persist();
+        pause();
     }
 
     public void setFfaOverride(Instant instant) {
         this.ffaOverride = instant;
         config.setTimeFfa(instant);
         ffaTeleported.set(false);
-        refreshPhase(Instant.now());
-        persist();
+        pause();
     }
 
     /**
-     * Apply a full schedule triple atomically (one persist, one phase refresh).
-     * Used by admin time-jumps so flags reset once and FFA override is explicit.
+     * Apply a full schedule triple. Always pauses (use {@link #unpause} or force-jump helpers to go live).
      */
     public void applySchedule(ScheduleJumps.Times times) {
         Objects.requireNonNull(times, "times");
@@ -129,8 +178,23 @@ public final class EventManager {
         config.setTimeFfa(times.ffaOverride());
         ceremonyDone.set(false);
         ffaTeleported.set(false);
-        refreshPhase(Instant.now());
-        persist();
+        pause();
+    }
+
+    /**
+     * Time-jump helpers: write schedule and immediately unpause into the live phase.
+     */
+    public EventPhase applyScheduleAndUnpause(ScheduleJumps.Times times, Instant now) {
+        Objects.requireNonNull(times, "times");
+        this.start = times.start();
+        this.end = times.end();
+        this.ffaOverride = times.ffaOverride();
+        config.setTimeStart(times.start());
+        config.setTimeEnd(times.end());
+        config.setTimeFfa(times.ffaOverride());
+        ceremonyDone.set(false);
+        ffaTeleported.set(false);
+        return unpause(now);
     }
 
     public boolean isFfaTeleported() {
@@ -151,7 +215,6 @@ public final class EventManager {
         persist();
     }
 
-    /** Clears one-shot FFA/ceremony flags without changing schedule times. */
     public void clearFlags() {
         ffaTeleported.set(false);
         ceremonyDone.set(false);
@@ -168,9 +231,6 @@ public final class EventManager {
         persist();
     }
 
-    /**
-     * Clear start/end/FFA override (IDLE). Flags reset. Writes empty times to config.
-     */
     public void clearSchedule() {
         this.start = null;
         this.end = null;
@@ -180,18 +240,20 @@ public final class EventManager {
         config.setTimeFfa(null);
         ceremonyDone.set(false);
         ffaTeleported.set(false);
-        refreshPhase(Instant.now());
-        persist();
+        pause();
     }
 
     public boolean killsCountAt(Instant now) {
+        if (paused.get()) {
+            return false;
+        }
         return timeline().killsCountAt(now);
     }
 
     public void persist() {
         try {
             repository.save(new EventRepository.StoredEvent(
-                    start, end, ffaOverride, phase, ffaTeleported.get(), ceremonyDone.get()
+                    start, end, ffaOverride, phase, ffaTeleported.get(), ceremonyDone.get(), paused.get()
             ));
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to persist event state", e);
@@ -202,7 +264,7 @@ public final class EventManager {
         EventPhase p = refreshPhase(Objects.requireNonNull(now));
         try {
             repository.save(new EventRepository.StoredEvent(
-                    start, end, ffaOverride, p, ffaTeleported.get(), ceremonyDone.get()
+                    start, end, ffaOverride, p, ffaTeleported.get(), ceremonyDone.get(), paused.get()
             ));
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to persist phase", e);

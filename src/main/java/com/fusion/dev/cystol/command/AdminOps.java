@@ -134,7 +134,8 @@ public final class AdminOps {
         ScheduleJumps.Times times = ScheduleJumps.startNow(
                 now, eventManager.end().orElse(null), config.ffaBeforeEndSeconds()
         );
-        eventManager.applySchedule(times);
+        // Force jumps go live immediately (unlike host schedule edits which pause).
+        eventManager.applyScheduleAndUnpause(times, now);
         sender.sendMessage(lang.msg("admin.startnow-ok", Map.of(
                 "phase", eventManager.phase().name(),
                 "time", TimeUtil.formatUtc(times.start())
@@ -149,7 +150,7 @@ public final class AdminOps {
                 eventManager.end().orElse(null),
                 config.ffaBeforeEndSeconds()
         );
-        eventManager.applySchedule(times);
+        eventManager.applyScheduleAndUnpause(times, now);
         sender.sendMessage(lang.msg("admin.ffanow-ok", Map.of(
                 "phase", eventManager.phase().name(),
                 "time", TimeUtil.formatUtc(now)
@@ -159,10 +160,20 @@ public final class AdminOps {
     public void endNow(CommandSender sender) {
         Instant now = Instant.now();
         ScheduleJumps.Times times = ScheduleJumps.endNow(now, eventManager.start().orElse(null));
-        eventManager.applySchedule(times);
+        eventManager.applyScheduleAndUnpause(times, now);
         sender.sendMessage(lang.msg("admin.endnow-ok", Map.of(
                 "phase", eventManager.phase().name()
         )));
+    }
+
+    public void pause(CommandSender sender) {
+        eventManager.pause();
+        sender.sendMessage(lang.msg("admin.paused-ok"));
+    }
+
+    public void unpause(CommandSender sender) {
+        EventPhase p = eventManager.unpause(Instant.now());
+        sender.sendMessage(lang.msg("admin.unpaused-ok", Map.of("phase", p.name())));
     }
 
     public void forceTp(CommandSender sender) {
@@ -239,6 +250,10 @@ public final class AdminOps {
                 eventManager.clearSchedule();
                 sender.sendMessage(lang.msg("admin.phase-ok", Map.of("phase", "IDLE")));
             }
+            case PAUSED -> {
+                eventManager.pause();
+                sender.sendMessage(lang.msg("admin.phase-ok", Map.of("phase", "PAUSED")));
+            }
             case COUNTDOWN -> {
                 ScheduleJumps.Times times = ScheduleJumps.countdown(
                         now,
@@ -246,7 +261,7 @@ public final class AdminOps {
                         COUNTDOWN_LEAD_SECONDS,
                         config.ffaBeforeEndSeconds()
                 );
-                eventManager.applySchedule(times);
+                eventManager.applyScheduleAndUnpause(times, now);
                 sender.sendMessage(lang.msg("admin.phase-ok", Map.of(
                         "phase", eventManager.phase().name()
                 )));
@@ -255,7 +270,7 @@ public final class AdminOps {
                 ScheduleJumps.Times times = ScheduleJumps.hunt(
                         now, eventManager.end().orElse(null), config.ffaBeforeEndSeconds()
                 );
-                eventManager.applySchedule(times);
+                eventManager.applyScheduleAndUnpause(times, now);
                 sender.sendMessage(lang.msg("admin.phase-ok", Map.of(
                         "phase", eventManager.phase().name()
                 )));
@@ -267,7 +282,7 @@ public final class AdminOps {
 
     public void sendUsage(CommandSender sender) {
         sender.sendMessage(Component.text(
-                "/preciv admin <status|startnow|ffanow|endnow|forcetp|forceceremony|resetflags|"
+                "/preciv admin <status|startnow|ffanow|endnow|pause|unpause|forcetp|forceceremony|resetflags|"
                         + "eligible|clearkills|reload|phase|wand|set …>"
         ));
     }

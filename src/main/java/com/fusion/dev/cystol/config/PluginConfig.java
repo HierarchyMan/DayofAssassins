@@ -374,6 +374,64 @@ public final class PluginConfig {
         }
     }
 
+    private void writeValue(String path, Object value) {
+        lock.writeLock().lock();
+        try {
+            config.set(path, value);
+            plugin.saveConfig();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public void setRewardsEnabled(boolean enabled) {
+        writeValue("rewards.enabled", enabled);
+    }
+
+    public void setRewardsMaxPlace(int maxPlace) {
+        writeValue("rewards.max-place", Math.max(0, maxPlace));
+    }
+
+    public void setFfaBeforeEndSeconds(long seconds) {
+        writeValue("ffa.before-end-seconds", Math.max(0L, seconds));
+    }
+
+    public void setAnnounceLeadSeconds(long seconds) {
+        writeValue("ffa.announce-lead-seconds", Math.max(0L, seconds));
+    }
+
+    public void setAnnounceIntervalSeconds(long seconds) {
+        writeValue("ffa.announce-interval-seconds", Math.max(1L, seconds));
+    }
+
+    public void setOutsideActionbarSeconds(long seconds) {
+        writeValue("ffa.outside-actionbar-seconds", Math.max(1L, seconds));
+    }
+
+    public void setFfaFinalCountdownEnabled(boolean enabled) {
+        writeValue("ffa.final-countdown.enabled", enabled);
+    }
+
+    public void setFfaFinalCountdownFromSeconds(int from) {
+        writeValue("ffa.final-countdown.from-seconds", Math.max(0, from));
+    }
+
+    public void setFfaFinalCountdownAudience(String audience) {
+        String v = audience == null ? "all" : audience.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!v.equals("all") && !v.equals("eligible")) {
+            v = "all";
+        }
+        writeValue("ffa.final-countdown.audience", v);
+    }
+
+    public void setMinPlayerSpacing(double spacing) {
+        writeValue("ffa.min-player-spacing", Math.max(1.0, spacing));
+    }
+
+    public void setTabBossbarEnabled(boolean enabled) {
+        writeValue("tab.bossbar.enabled", enabled);
+    }
+
     public ConfigurationSection effectSection(String path) {
         return cfg().getConfigurationSection(path);
     }

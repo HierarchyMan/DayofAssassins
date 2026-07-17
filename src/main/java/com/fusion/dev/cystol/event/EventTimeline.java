@@ -146,7 +146,7 @@ public final class EventTimeline {
                 yield Optional.ofNullable(end);
             }
             case FFA -> Optional.ofNullable(end);
-            case IDLE, ENDED -> Optional.empty();
+            case IDLE, ENDED, PAUSED -> Optional.empty();
         };
     }
 
@@ -188,7 +188,7 @@ public final class EventTimeline {
                 yield segmentFill(now, from, end);
             }
             case ENDED -> 1.0;
-            case IDLE -> 0.0;
+            case IDLE, PAUSED -> 0.0;
         };
     }
 

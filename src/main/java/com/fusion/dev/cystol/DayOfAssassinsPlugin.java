@@ -18,6 +18,8 @@ import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.event.EventScheduler;
 import com.fusion.dev.cystol.fx.EffectService;
+import com.fusion.dev.cystol.host.HostChatSession;
+import com.fusion.dev.cystol.host.HostGui;
 import com.fusion.dev.cystol.kill.KillService;
 import com.fusion.dev.cystol.kill.PvpManagerKillListener;
 import com.fusion.dev.cystol.storage.EventRepository;
@@ -149,12 +151,23 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
                 config, lang, effects, vanishService
         );
 
+        HostChatSession hostChat = new HostChatSession(this, lang);
+        HostGui hostGui = new HostGui(eventManager, config, lang, effects, hostChat);
+        hostChat.bindGui(hostGui);
+        getServer().getPluginManager().registerEvents(hostChat, this);
+
         eventCommand = new EventCommand(lang);
         precivCommand = new PrecivCommand(
-                eventManager, killService, compassService, config, lang, adminOps
+                eventManager, killService, compassService, config, lang, adminOps, hostGui
         );
 
         eventScheduler.start();
+
+        // Mid-boot recover: no live hunt/finale → no Assassin's Compasses floating around
+        EventPhase bootPhase = eventManager.phase();
+        if (bootPhase != EventPhase.HUNT && bootPhase != EventPhase.FFA) {
+            compassListener.stripAllOnlineSilent();
+        }
         try {
             eventRepository.setMetric("last_enable", Instant.now().toString());
             eventRepository.setMetric("phase", eventManager.phase().name());

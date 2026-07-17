@@ -3,9 +3,9 @@ package com.fusion.dev.cystol.compass;
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.fx.EffectService;
 import com.fusion.dev.cystol.kill.KillService;
+import com.fusion.dev.cystol.util.GuiItems;
 import com.fusion.dev.cystol.util.TextUtil;
 import com.fusion.dev.cystol.util.VanishService;
-import dev.triumphteam.gui.builder.item.ItemBuilder;
 import dev.triumphteam.gui.guis.Gui;
 import dev.triumphteam.gui.guis.GuiItem;
 import dev.triumphteam.gui.guis.PaginatedGui;
@@ -72,44 +72,47 @@ public final class CompassGui {
 
         if (players.isEmpty()) {
             Map<String, String> ph = Map.of();
-            GuiItem empty = ItemBuilder.from(Material.BARRIER)
-                    .name(TextUtil.component(lang.raw("compass.gui.no-players.name"), ph))
-                    .lore(TextUtil.componentList(lang.rawList("compass.gui.no-players.lore"), ph))
-                    .asGuiItem(e -> effects.play(viewer, EffectService.EffectKey.MENU_DENY));
-            gui.setItem(22, empty);
+            gui.setItem(22, GuiItems.item(
+                    Material.BARRIER,
+                    TextUtil.component(lang.raw("compass.gui.no-players.name"), ph),
+                    TextUtil.componentList(lang.rawList("compass.gui.no-players.lore"), ph),
+                    e -> effects.play(viewer, EffectService.EffectKey.MENU_DENY)
+            ));
         } else {
             for (Player target : players) {
                 gui.addItem(playerIcon(viewer, target, currentTarget));
             }
         }
 
-        gui.setItem(6, 3, ItemBuilder.from(Material.ARROW)
-                .name(TextUtil.component(lang.raw("compass.gui.prev-page.name"),
-                        Map.of("page", String.valueOf(gui.getCurrentPageNum()),
-                                "pages", String.valueOf(Math.max(1, gui.getPagesNum())))))
-                .lore(TextUtil.componentList(lang.rawList("compass.gui.prev-page.lore"),
-                        Map.of("page", String.valueOf(gui.getCurrentPageNum()),
-                                "pages", String.valueOf(Math.max(1, gui.getPagesNum())))))
-                .asGuiItem(e -> {
+        Map<String, String> pagePh = Map.of(
+                "page", String.valueOf(gui.getCurrentPageNum()),
+                "pages", String.valueOf(Math.max(1, gui.getPagesNum()))
+        );
+        gui.setItem(6, 3, GuiItems.item(
+                Material.ARROW,
+                TextUtil.component(lang.raw("compass.gui.prev-page.name"), pagePh),
+                TextUtil.componentList(lang.rawList("compass.gui.prev-page.lore"), pagePh),
+                e -> {
                     effects.play(viewer, EffectService.EffectKey.MENU_PAGE);
                     gui.previous();
-                }));
-        gui.setItem(6, 5, ItemBuilder.from(Material.BOOK)
-                .name(TextUtil.component(lang.raw("compass.gui.info.name"), Map.of()))
-                .lore(TextUtil.componentList(lang.rawList("compass.gui.info.lore"), Map.of()))
-                .asGuiItem(e -> {
-                }));
-        gui.setItem(6, 7, ItemBuilder.from(Material.ARROW)
-                .name(TextUtil.component(lang.raw("compass.gui.next-page.name"),
-                        Map.of("page", String.valueOf(gui.getCurrentPageNum()),
-                                "pages", String.valueOf(Math.max(1, gui.getPagesNum())))))
-                .lore(TextUtil.componentList(lang.rawList("compass.gui.next-page.lore"),
-                        Map.of("page", String.valueOf(gui.getCurrentPageNum()),
-                                "pages", String.valueOf(Math.max(1, gui.getPagesNum())))))
-                .asGuiItem(e -> {
+                }
+        ));
+        gui.setItem(6, 5, GuiItems.item(
+                Material.BOOK,
+                TextUtil.component(lang.raw("compass.gui.info.name"), Map.of()),
+                TextUtil.componentList(lang.rawList("compass.gui.info.lore"), Map.of()),
+                e -> {
+                }
+        ));
+        gui.setItem(6, 7, GuiItems.item(
+                Material.ARROW,
+                TextUtil.component(lang.raw("compass.gui.next-page.name"), pagePh),
+                TextUtil.componentList(lang.rawList("compass.gui.next-page.lore"), pagePh),
+                e -> {
                     effects.play(viewer, EffectService.EffectKey.MENU_PAGE);
                     gui.next();
-                }));
+                }
+        ));
 
         gui.open(viewer);
     }
@@ -126,17 +129,17 @@ public final class CompassGui {
                 : lang.rawList("compass.gui.player.lore");
 
         ItemStack skull = headBase(target).clone();
-        SkullMeta meta = (SkullMeta) skull.getItemMeta();
-        meta.displayName(TextUtil.component(lang.raw("compass.gui.player.name"), ph));
-        meta.lore(TextUtil.componentList(loreKeys, ph));
-        skull.setItemMeta(meta);
-
-        return ItemBuilder.from(skull).asGuiItem(event -> {
-            compassService.setTarget(viewer, target.getUniqueId());
-            effects.play(viewer, EffectService.EffectKey.MENU_SELECT_TARGET);
-            viewer.sendMessage(lang.msg("compass.tracking-selected", Map.of("target", target.getName())));
-            viewer.closeInventory();
-        });
+        return GuiItems.item(
+                skull,
+                TextUtil.component(lang.raw("compass.gui.player.name"), ph),
+                TextUtil.componentList(loreKeys, ph),
+                event -> {
+                    compassService.setTarget(viewer, target.getUniqueId());
+                    effects.play(viewer, EffectService.EffectKey.MENU_SELECT_TARGET);
+                    viewer.sendMessage(lang.msg("compass.tracking-selected", Map.of("target", target.getName())));
+                    viewer.closeInventory();
+                }
+        );
     }
 
     private ItemStack headBase(Player target) {

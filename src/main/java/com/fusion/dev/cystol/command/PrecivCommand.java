@@ -4,6 +4,8 @@ import com.fusion.dev.cystol.compass.CompassService;
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.event.EventManager;
+import com.fusion.dev.cystol.event.EventPhase;
+import com.fusion.dev.cystol.host.HostGui;
 import com.fusion.dev.cystol.kill.DenseRanking;
 import com.fusion.dev.cystol.kill.KillService;
 import com.fusion.dev.cystol.util.TimeUtil;
@@ -31,6 +33,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
     private final PluginConfig config;
     private final Lang lang;
     private final AdminOps adminOps;
+    private final HostGui hostGui;
 
     public PrecivCommand(
             EventManager eventManager,
@@ -38,7 +41,8 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             CompassService compassService,
             PluginConfig config,
             Lang lang,
-            AdminOps adminOps
+            AdminOps adminOps,
+            HostGui hostGui
     ) {
         this.eventManager = eventManager;
         this.killService = killService;
@@ -46,6 +50,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
         this.config = config;
         this.lang = lang;
         this.adminOps = adminOps;
+        this.hostGui = hostGui;
     }
 
     /** Paper Brigadier entry (no Bukkit {@link Command} instance). */
@@ -56,17 +61,34 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Usage: /preciv <compass|killtop|admin>"));
+            sender.sendMessage(Component.text("Usage: /preciv <compass|killtop|gui|admin>"));
             return true;
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "compass" -> handleCompass(sender);
             case "killtop" -> handleKilltop(sender);
+            case "gui" -> handleGui(sender);
             case "admin" -> handleAdmin(sender, Arrays.copyOfRange(args, 1, args.length));
-            default -> sender.sendMessage(Component.text("Usage: /preciv <compass|killtop|admin>"));
+            default -> sender.sendMessage(Component.text("Usage: /preciv <compass|killtop|gui|admin>"));
         }
         return true;
+    }
+
+    private void handleGui(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(lang.msg("messages.players-only"));
+            return;
+        }
+        if (!player.hasPermission("preciv.admin")) {
+            player.sendMessage(lang.msg("messages.no-permission"));
+            return;
+        }
+        if (hostGui == null) {
+            player.sendMessage(Component.text("Host GUI is not available."));
+            return;
+        }
+        hostGui.openMain(player);
     }
 
     private void handleCompass(CommandSender sender) {
@@ -76,6 +98,11 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
         }
         if (!player.hasPermission("preciv.compass")) {
             player.sendMessage(lang.msg("messages.no-permission"));
+            return;
+        }
+        EventPhase phase = eventManager.phase();
+        if (phase != EventPhase.HUNT && phase != EventPhase.FFA) {
+            player.sendMessage(lang.msg("compass.not-during-event"));
             return;
         }
         CompassService.GiveResult result = compassService.tryGive(player);
@@ -128,6 +155,8 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             case "forcetp" -> adminOps.forceTp(sender);
             case "forceceremony" -> adminOps.forceCeremony(sender);
             case "resetflags" -> adminOps.resetFlags(sender);
+            case "pause" -> adminOps.pause(sender);
+            case "unpause" -> adminOps.unpause(sender);
             case "eligible" -> adminOps.eligible(sender);
             case "clearkills" -> {
                 boolean confirm = args.length >= 2 && args[1].equalsIgnoreCase("confirm");
@@ -172,13 +201,8 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
     }
 
     private void setTime(CommandSender sender, String[] args, boolean start) {
-        // args: set starttime yyyy/MM/dd HH:mm:ss  -> need join from index 2
-        if (args.length < 4) {
-            sender.sendMessage(lang.msg("admin.invalid-time"));
-            return;
-        }
-        String raw = args[2] + " " + args[3];
-        Optional<Instant> parsed = TimeUtil.parseUtc(raw);
+        // args: set starttime <yyyy/MM/dd HH:mm:ss | -r 1d2h5m>
+        Optional<Instant> parsed = TimeUtil.parseCommandTimeArgs(args, 2, Instant.now());
         if (parsed.isEmpty()) {
             sender.sendMessage(lang.msg("admin.invalid-time"));
             return;
@@ -190,26 +214,24 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             eventManager.setEnd(parsed.get());
             sender.sendMessage(lang.msg("admin.end-set", Map.of("time", TimeUtil.formatUtc(parsed.get()))));
         }
+        sender.sendMessage(lang.msg("admin.schedule-paused-hint"));
     }
 
     private void setFfa(CommandSender sender, String[] args) {
         if (args.length >= 3 && args[2].equalsIgnoreCase("clear")) {
             eventManager.setFfaOverride(null);
             sender.sendMessage(lang.msg("admin.ffa-cleared"));
+            sender.sendMessage(lang.msg("admin.schedule-paused-hint"));
             return;
         }
-        if (args.length < 4) {
-            sender.sendMessage(lang.msg("admin.invalid-time"));
-            return;
-        }
-        String raw = args[2] + " " + args[3];
-        Optional<Instant> parsed = TimeUtil.parseUtc(raw);
+        Optional<Instant> parsed = TimeUtil.parseCommandTimeArgs(args, 2, Instant.now());
         if (parsed.isEmpty()) {
             sender.sendMessage(lang.msg("admin.invalid-time"));
             return;
         }
         eventManager.setFfaOverride(parsed.get());
         sender.sendMessage(lang.msg("admin.ffa-set", Map.of("time", TimeUtil.formatUtc(parsed.get()))));
+        sender.sendMessage(lang.msg("admin.schedule-paused-hint"));
     }
 
     private void setCenter(CommandSender sender) {

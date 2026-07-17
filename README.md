@@ -177,8 +177,9 @@ Description text comes from `lang.yml`.
 | Command | Who | Description |
 |---------|-----|-------------|
 | `/event` | Everyone | Event description (`lang.yml`) |
-| `/preciv compass` | Players | Give Assassin’s Compass if they don’t already have one |
+| `/preciv compass` | Players | Give Assassin’s Compass if they don’t already have one (**hunt/finale only**) |
 | `/preciv killtop` | Everyone | Current kill leaderboard |
+| `/preciv gui` | Admins | **Host console** — schedule times, pause/unpause, rewards, finale settings |
 | `/doa` | — | Alias of `/preciv` |
 
 ### Admin — setup
@@ -199,9 +200,11 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 | Command | Description |
 |---------|-------------|
 | `/preciv admin status` | Phase, times, flags, top killer, vanish backend, FFA eligible count |
-| `/preciv admin startnow` | Jump into hunt (start ≈ now; ensures end is in the future) |
-| `/preciv admin ffanow` | Jump into FFA (override FFA = now; next tick runs ring TP) |
-| `/preciv admin endnow` | Jump to ended (end = now; ceremony runs if not done) |
+| `/preciv admin startnow` | Jump into hunt **live** (start ≈ now; unpauses) |
+| `/preciv admin ffanow` | Jump into FFA **live** (unpauses; next tick ring TP) |
+| `/preciv admin endnow` | Jump to ended **live** (unpauses; ceremony if needed) |
+| `/preciv admin pause` / `unpause` | Freeze / resume schedule progression |
+| `/preciv admin set starttime …` | Absolute UTC or **`-r 1d2h`** relative from now (**pauses**) |
 | `/preciv admin phase <idle\|countdown\|hunt\|ffa\|ended>` | Time-jump helper for a target phase |
 | `/preciv admin forcetp` | Re-run FFA mass TP (must already be in FFA) |
 | `/preciv admin forceceremony` | Re-run end ceremony (must already be ENDED) |
@@ -334,6 +337,10 @@ Used for:
 
 ## Compass rules (UX)
 
+- **Only during hunt/finale** — command, right-click GUI, and auto-give are live-event only  
+- **Event end / idle** — all Assassin’s Compasses are **silently removed** from online players  
+- **Join off-event** — leftover compasses are **silently stripped**  
+- **Right-click off-event** — cancelled, no menu  
 - **One compass only** — command refuses duplicates; pickup dupes removed  
 - **Allowed slots** — player inv + hands; not crafting / containers / armor  
 - **Drop / throw** — item entity destroyed (not left on the ground)  
@@ -341,6 +348,17 @@ Used for:
 - **Full inventory** on join/give — no ground drop; ~1 minute action bar to free a slot and use `/preciv compass`  
 
 Right-click opens a paginated player list (non-vanished). State is reflected in item lore.
+
+### Host GUI (`/preciv gui`)
+
+Requires `preciv.admin`. Values always show in item lore.
+
+| Section | What you control |
+|---------|------------------|
+| **Times** | Start / end / finale override — chat entry (`yyyy/MM/dd HH:mm:ss` UTC), shift-click = now, right-click clear finale |
+| **Rewards** | Toggle congrats messages; max dense place (click ±) |
+| **Finale** | Before-end offset, announce lead/interval, outside bar duration, 5…1 countdown on/off/from/audience, ring spacing, TAB bossbar toggle |
+| **Quick jumps** | startnow / ffanow / endnow |
 
 ---
 
