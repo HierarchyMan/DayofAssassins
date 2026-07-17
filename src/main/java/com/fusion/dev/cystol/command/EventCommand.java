@@ -16,6 +16,10 @@ public final class EventCommand implements CommandExecutor {
         this.lang = lang;
     }
 
+    public void execute(CommandSender sender) {
+        onCommand(sender, null, "event", new String[0]);
+    }
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission("preciv.event")) {

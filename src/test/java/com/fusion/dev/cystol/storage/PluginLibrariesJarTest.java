@@ -10,47 +10,57 @@ import java.nio.file.Path;
 import java.util.jar.JarFile;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Ensures the shipped jar stays lean: sqlite is declared for Paper's library loader,
- * not embedded with multi-platform natives.
+ * Paper-only packaging: paper-plugin.yml present, no Bukkit plugin.yml,
+ * sqlite via loader (not shaded natives).
  */
 class PluginLibrariesJarTest {
 
     @Test
-    void pluginYmlDeclaresSqliteLibrary() throws Exception {
+    void paperPluginYmlPresentWithLoaderAndDeps() throws Exception {
         String yml;
-        try (InputStream in = getClass().getClassLoader().getResourceAsStream("plugin.yml")) {
-            Assumptions.assumeTrue(in != null, "plugin.yml on classpath");
+        try (InputStream in = getClass().getClassLoader().getResourceAsStream("paper-plugin.yml")) {
+            assertNotNull(in, "paper-plugin.yml must be on classpath");
             yml = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
-        assertTrue(yml.contains("libraries:"), yml);
-        assertTrue(yml.contains("org.xerial:sqlite-jdbc:"), yml);
+        assertTrue(yml.contains("main: com.fusion.dev.cystol.DayOfAssassinsPlugin"), yml);
+        assertTrue(yml.contains("loader: com.fusion.dev.cystol.DayOfAssassinsLoader"), yml);
+        assertTrue(yml.contains("TAB:"), yml);
+        assertTrue(yml.contains("PvPManager:"), yml);
+        assertTrue(yml.contains("join-classpath: true"), yml);
     }
 
     @Test
-    void shadedJarDoesNotEmbedSqliteNatives() throws Exception {
+    void noBukkitPluginYmlInProjectResources() throws Exception {
+        // Classpath may contain other jars' plugin.yml; assert ours is gone from module output
+        Path moduleYml = Path.of("src/main/resources/plugin.yml");
+        assertFalse(Files.exists(moduleYml), "src/main/resources/plugin.yml must not exist");
+        Path built = Path.of("target/classes/plugin.yml");
+        assertFalse(Files.exists(built), "target/classes/plugin.yml must not exist after compile");
+    }
+
+    @Test
+    void shadedJarIsLeanWithoutSqliteNatives() throws Exception {
         Path jar = findShadedJar();
         Assumptions.assumeTrue(jar != null && Files.isRegularFile(jar),
                 "shaded jar not built yet — run package first");
 
         try (JarFile jf = new JarFile(jar.toFile())) {
+            assertTrue(jf.getEntry("paper-plugin.yml") != null, "paper-plugin.yml inside jar");
+            assertTrue(jf.getEntry("plugin.yml") == null, "must not ship plugin.yml");
             boolean hasNative = jf.stream().anyMatch(e ->
                     e.getName().startsWith("org/sqlite/native/")
                             || e.getName().endsWith("sqlitejdbc.dll")
-                            || e.getName().endsWith("libsqlitejdbc.so")
-                            || e.getName().endsWith("libsqlitejdbc.dylib"));
-            assertFalse(hasNative, "sqlite natives must not be shaded; use Paper libraries");
-
-            boolean hasJdbc = jf.stream().anyMatch(e -> e.getName().equals("org/sqlite/JDBC.class"));
-            assertFalse(hasJdbc, "org.sqlite.JDBC should come from Paper-downloaded library, not our jar");
+                            || e.getName().endsWith("libsqlitejdbc.so"));
+            assertFalse(hasNative, "sqlite natives must not be shaded");
+            assertTrue(jf.getEntry("com/fusion/dev/cystol/DayOfAssassinsLoader.class") != null);
         }
 
         long size = Files.size(jar);
-        // Triumph-only shade should be well under a couple MB; keep a soft ceiling
-        assertTrue(size < 3_000_000L,
-                "jar too large (" + size + " bytes); sqlite may still be shaded");
+        assertTrue(size < 3_000_000L, "jar too large (" + size + " bytes)");
     }
 
     private static Path findShadedJar() {

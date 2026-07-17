@@ -4,6 +4,7 @@ import com.fusion.dev.cystol.arena.ArenaWandListener;
 import com.fusion.dev.cystol.arena.FfaSpawnService;
 import com.fusion.dev.cystol.ceremony.EndCeremonyService;
 import com.fusion.dev.cystol.command.EventCommand;
+import com.fusion.dev.cystol.command.PaperCommandRegistrar;
 import com.fusion.dev.cystol.command.PrecivCommand;
 import com.fusion.dev.cystol.compass.CompassGui;
 import com.fusion.dev.cystol.compass.CompassKeys;
@@ -20,13 +21,19 @@ import com.fusion.dev.cystol.kill.PvpManagerKillListener;
 import com.fusion.dev.cystol.storage.EventRepository;
 import com.fusion.dev.cystol.storage.KillRepository;
 import com.fusion.dev.cystol.storage.SqliteDatabase;
-import org.bukkit.command.PluginCommand;
+import org.bukkit.Bukkit;
+import org.bukkit.permissions.Permission;
+import org.bukkit.permissions.PermissionDefault;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.logging.Level;
 
+/**
+ * Paper-only plugin (loaded via {@code paper-plugin.yml}, not Bukkit {@code plugin.yml}).
+ */
 public final class DayOfAssassinsPlugin extends JavaPlugin {
 
     private SqliteDatabase database;
@@ -36,13 +43,32 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
     private TabDisplayService tabDisplayService;
     private CompassService compassService;
 
+    private PluginConfig config;
+    private Lang lang;
+    private PrecivCommand precivCommand;
+    private EventCommand eventCommand;
+
+    @Override
+    public void onLoad() {
+        registerPermissions();
+        config = new PluginConfig(this);
+        config.loadDefaults();
+        lang = new Lang(this);
+        lang.load();
+        // Must bind COMMANDS lifecycle before the server freezes the tree
+        PaperCommandRegistrar.register(this, () -> eventCommand, () -> precivCommand);
+    }
+
     @Override
     public void onEnable() {
-        PluginConfig config = new PluginConfig(this);
-        config.loadDefaults();
-
-        Lang lang = new Lang(this);
-        lang.load();
+        if (config == null) {
+            config = new PluginConfig(this);
+            config.loadDefaults();
+        }
+        if (lang == null) {
+            lang = new Lang(this);
+            lang.load();
+        }
 
         database = new SqliteDatabase(this, config.storageFile());
         try {
@@ -87,26 +113,16 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
                 new PvpManagerKillListener(eventManager, killService, effects, getLogger()), this);
 
-        // tracking tick
         getServer().getScheduler().runTaskTimer(this, () -> {
             for (var p : getServer().getOnlinePlayers()) {
                 compassService.tickTracking(p);
             }
         }, 20L, 20L);
 
-        PluginCommand eventCmd = getCommand("event");
-        if (eventCmd != null) {
-            eventCmd.setExecutor(new EventCommand(lang));
-        }
-        PluginCommand preciv = getCommand("preciv");
-        if (preciv != null) {
-            PrecivCommand executor = new PrecivCommand(eventManager, killService, compassService, config, lang);
-            preciv.setExecutor(executor);
-            preciv.setTabCompleter(executor);
-        }
+        eventCommand = new EventCommand(lang);
+        precivCommand = new PrecivCommand(eventManager, killService, compassService, config, lang);
 
         eventScheduler.start();
-        // sync phase metric
         try {
             eventRepository.setMetric("last_enable", Instant.now().toString());
             eventRepository.setMetric("phase", eventManager.phase().name());
@@ -114,7 +130,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
             getLogger().log(Level.WARNING, "Metric write failed", e);
         }
 
-        getLogger().info("Day of Assassins enabled. Phase=" + eventManager.phase());
+        getLogger().info("Day of Assassins enabled (Paper plugin). Phase=" + eventManager.phase());
     }
 
     @Override
@@ -132,6 +148,22 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
             database.close();
         }
         getLogger().info("Day of Assassins disabled.");
+    }
+
+    private void registerPermissions() {
+        PluginManager pm = Bukkit.getPluginManager();
+        addPerm(pm, "preciv.use", "Base /preciv access", PermissionDefault.TRUE);
+        addPerm(pm, "preciv.event", "Use /event", PermissionDefault.TRUE);
+        addPerm(pm, "preciv.compass", "Use /preciv compass", PermissionDefault.TRUE);
+        addPerm(pm, "preciv.killtop", "View kill leaderboard", PermissionDefault.TRUE);
+        addPerm(pm, "preciv.admin", "Admin setup commands", PermissionDefault.OP);
+        addPerm(pm, "preciv.ffa.tp.bypass", "Skip FFA mass teleport", PermissionDefault.FALSE);
+    }
+
+    private static void addPerm(PluginManager pm, String name, String desc, PermissionDefault def) {
+        if (pm.getPermission(name) == null) {
+            pm.addPermission(new Permission(name, desc, def));
+        }
     }
 
     public EventManager eventManager() {

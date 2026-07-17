@@ -1,0 +1,21 @@
+name: DayOfAssassins
+version: ${project.version}
+main: com.fusion.dev.cystol.DayOfAssassinsPlugin
+loader: com.fusion.dev.cystol.DayOfAssassinsLoader
+api-version: '1.21'
+author: cystol
+description: Pre-Civilization - Day of Assassins (Paper-only)
+website: https://github.com/fusion-dev
+
+# Paper plugins only load on Paper (not Spigot/Bukkit plugin loader).
+# Server plugin deps — join-classpath required to call TAB / PvPManager APIs.
+dependencies:
+  server:
+    TAB:
+      load: BEFORE
+      required: true
+      join-classpath: true
+    PvPManager:
+      load: BEFORE
+      required: true
+      join-classpath: true

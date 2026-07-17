@@ -60,7 +60,7 @@
             <artifactId>triumph-gui</artifactId>
             <version>3.1.11</version>
         </dependency>
-        <!-- Runtime: Paper downloads via plugin.yml libraries. Compile/test only here. -->
+        <!-- Runtime: Paper PluginLoader MavenLibraryResolver (DayOfAssassinsLoader). Compile/test only. -->
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>

@@ -47,6 +47,11 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
         this.lang = lang;
     }
 
+    /** Paper Brigadier entry (no Bukkit {@link Command} instance). */
+    public void execute(CommandSender sender, String[] args) {
+        onCommand(sender, null, "preciv", args == null ? new String[0] : args);
+    }
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
