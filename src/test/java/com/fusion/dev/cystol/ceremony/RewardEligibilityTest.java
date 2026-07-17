@@ -40,4 +40,23 @@ class RewardEligibilityTest {
         assertTrue(RewardEligibility.eligible(ranking, 0).isEmpty());
         assertTrue(RewardEligibility.eligible(ranking, -1).isEmpty());
     }
+
+    @Test
+    void maxPlaceThreeIncludesBronzeNotFourthDensePlace() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        UUID c = UUID.randomUUID();
+        UUID d = UUID.randomUUID();
+        List<DenseRanking.Entry> ranking = DenseRanking.rank(List.of(
+                new DenseRanking.KillRecord(a, "A", 10),
+                new DenseRanking.KillRecord(b, "B", 8),
+                new DenseRanking.KillRecord(c, "C", 6),
+                new DenseRanking.KillRecord(d, "D", 4)
+        ));
+        // places 1,2,3,4
+        List<DenseRanking.Entry> eligible = RewardEligibility.eligible(ranking, 3);
+        assertEquals(3, eligible.size());
+        assertTrue(eligible.stream().noneMatch(e -> e.place() > 3));
+        assertTrue(eligible.stream().anyMatch(e -> e.name().equals("C") && e.place() == 3));
+    }
 }

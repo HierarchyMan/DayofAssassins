@@ -57,14 +57,11 @@ public final class EndCeremonyService {
             int place;
             int kills;
             if (entry != null) {
-                place = entry.place();
+                place = CeremonyPlace.displayPlace(true, entry.place(), maxPlace);
                 kills = entry.kills();
             } else {
-                place = maxPlace + 1;
+                place = CeremonyPlace.displayPlace(false, 0, maxPlace);
                 kills = 0;
-                if (ranking.isEmpty()) {
-                    place = 1;
-                }
             }
             showPlace(player, place, kills);
         }
@@ -90,7 +87,7 @@ public final class EndCeremonyService {
                 Title.Times.times(Duration.ofMillis(500), Duration.ofSeconds(5), Duration.ofSeconds(1))
         );
         player.showTitle(title);
-        if (place >= 1 && place <= 3) {
+        if (CeremonyPlace.isTopThreeMedal(place)) {
             effects.play(player, EffectService.EffectKey.END_TOP3);
         } else {
             effects.play(player, EffectService.EffectKey.END_NORMAL);

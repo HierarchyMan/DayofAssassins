@@ -90,9 +90,6 @@ public final class EventManager {
     public void setStart(Instant instant) {
         this.start = instant;
         config.setTimeStart(instant);
-        if (instant != null && ceremonyDone.get() && end != null && instant.isAfter(end)) {
-            // new event schedule
-        }
         // new schedule resets ceremony/ffa flags if start is in future or reconfigured
         ceremonyDone.set(false);
         ffaTeleported.set(false);
@@ -113,6 +110,24 @@ public final class EventManager {
     public void setFfaOverride(Instant instant) {
         this.ffaOverride = instant;
         config.setTimeFfa(instant);
+        ffaTeleported.set(false);
+        refreshPhase(Instant.now());
+        persist();
+    }
+
+    /**
+     * Apply a full schedule triple atomically (one persist, one phase refresh).
+     * Used by admin time-jumps so flags reset once and FFA override is explicit.
+     */
+    public void applySchedule(ScheduleJumps.Times times) {
+        Objects.requireNonNull(times, "times");
+        this.start = times.start();
+        this.end = times.end();
+        this.ffaOverride = times.ffaOverride();
+        config.setTimeStart(times.start());
+        config.setTimeEnd(times.end());
+        config.setTimeFfa(times.ffaOverride());
+        ceremonyDone.set(false);
         ffaTeleported.set(false);
         refreshPhase(Instant.now());
         persist();

@@ -154,6 +154,8 @@ admin:
   forcetp-ok: "&aForced FFA teleport."
   forcetp-not-ffa: "&cNot in FFA phase. Use &f/preciv admin ffanow &cor wait for the clock."
   forcetp-in-progress: "&cFFA teleport already in progress."
+  forcetp-no-spawns: "&cFFA teleport failed: arena world unloaded or no safe spawns. Fix arena, then retry."
+  forcetp-failed: "&cFFA teleport failed unexpectedly. Check console; flag left clear for retry."
   forceceremony-ok: "&aForced end ceremony."
   forceceremony-not-ended: "&cNot in ENDED phase. Use &f/preciv admin endnow &cfirst."
   resetflags-ok: "&aCleared ffa_teleported and ceremony_done flags."

@@ -85,6 +85,25 @@ class KillServiceTest {
         }
     }
 
+    @Test
+    void clearAllWipesMemoryRankingAndDisk() throws Exception {
+        UUID a = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        service.creditKill(a, "Dana");
+        service.creditKill(a, "Dana");
+        assertEquals(1, service.ranking().size());
+        service.clearAll();
+        assertEquals(0, service.ranking().size());
+        assertTrue(service.topKiller().isEmpty());
+        // Drain async clear
+        service.shutdown();
+        service = null;
+        try (Statement st = verifyConn.createStatement();
+             ResultSet rs = st.executeQuery("SELECT COUNT(*) AS c FROM kills")) {
+            assertTrue(rs.next());
+            assertEquals(0, rs.getInt("c"));
+        }
+    }
+
     /** Minimal SqliteDatabase stand-in that does not need a live Bukkit plugin. */
     private static final class FileBackedDb extends SqliteDatabase {
         private final File file;

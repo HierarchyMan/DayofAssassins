@@ -183,6 +183,21 @@ public final class FfaSpawnService {
      * do not freeze a single frame. {@code afterEach} runs on the main thread per player;
      * {@code onComplete} once all batches finish.
      */
+    /**
+     * Whether the arena world is loaded and spawn math can produce locations.
+     * Used to avoid marking FFA teleported when TP cannot run.
+     */
+    public boolean canBuildSpawns(int playerCount) {
+        if (playerCount <= 0) {
+            return true;
+        }
+        World world = Bukkit.getWorld(config.arenaWorld());
+        if (world == null) {
+            return false;
+        }
+        return !buildSpawnLocations(playerCount).isEmpty();
+    }
+
     public BukkitTask teleportPlayersBatched(
             JavaPlugin plugin,
             List<Player> players,
@@ -199,32 +214,59 @@ public final class FfaSpawnService {
         int batch = Math.max(1, batchSize);
         List<Player> ordered = new ArrayList<>(players);
         List<Location> locs = buildSpawnLocations(ordered.size());
+        if (locs.isEmpty()) {
+            // Caller must treat null return as failure — do not run onComplete (would look like success).
+            logger.warning("FFA batch aborted: no spawn locations (world unloaded or cuboid unusable)");
+            return null;
+        }
         final int[] index = {0};
         final BukkitTask[] holder = new BukkitTask[1];
+        final boolean[] completed = {false};
         holder[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
-            int start = index[0];
-            int end = Math.min(start + batch, ordered.size());
-            for (int i = start; i < end; i++) {
-                Player p = ordered.get(i);
-                if (p == null || !p.isOnline()) {
-                    continue;
-                }
-                Location loc = i < locs.size() ? locs.get(i) : locs.isEmpty() ? null : locs.get(0);
-                if (loc == null) {
-                    continue;
-                }
-                p.teleport(loc);
-                if (afterEach != null) {
-                    afterEach.accept(p);
-                }
+            if (completed[0]) {
+                return;
             }
-            index[0] = end;
-            if (end >= ordered.size()) {
-                if (holder[0] != null) {
-                    holder[0].cancel();
+            boolean done = false;
+            try {
+                int start = index[0];
+                int end = Math.min(start + batch, ordered.size());
+                for (int i = start; i < end; i++) {
+                    try {
+                        Player p = ordered.get(i);
+                        if (p == null || !p.isOnline()) {
+                            continue;
+                        }
+                        Location loc = i < locs.size() ? locs.get(i) : locs.get(0);
+                        if (loc == null) {
+                            continue;
+                        }
+                        p.teleport(loc);
+                        if (afterEach != null) {
+                            afterEach.accept(p);
+                        }
+                    } catch (RuntimeException perPlayer) {
+                        logger.warning("FFA teleport skipped a player: " + perPlayer.getMessage());
+                    }
                 }
-                if (onComplete != null) {
-                    onComplete.run();
+                index[0] = end;
+                done = end >= ordered.size();
+            } catch (RuntimeException batchEx) {
+                logger.warning("FFA batch tick failed; finishing batch: " + batchEx.getMessage());
+                index[0] = ordered.size();
+                done = true;
+            } finally {
+                if (done && !completed[0]) {
+                    completed[0] = true;
+                    if (holder[0] != null) {
+                        holder[0].cancel();
+                    }
+                    if (onComplete != null) {
+                        try {
+                            onComplete.run();
+                        } catch (RuntimeException completeEx) {
+                            logger.warning("FFA onComplete failed: " + completeEx.getMessage());
+                        }
+                    }
                 }
             }
         }, 0L, 1L);

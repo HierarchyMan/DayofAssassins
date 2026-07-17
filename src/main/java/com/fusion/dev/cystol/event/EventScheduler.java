@@ -47,6 +47,7 @@ public final class EventScheduler {
     private BukkitTask outsideActionbarTask;
     private Component outsideActionbarMessage;
     private final AtomicBoolean ffaTpInProgress = new AtomicBoolean(false);
+    private BukkitTask ffaBatchTask;
 
     public EventScheduler(
             JavaPlugin plugin,
@@ -96,6 +97,15 @@ public final class EventScheduler {
             outsideActionbarTask = null;
         }
         outsideActionbarMessage = null;
+        cancelFfaBatch();
+        ffaTpInProgress.set(false);
+    }
+
+    private void cancelFfaBatch() {
+        if (ffaBatchTask != null) {
+            ffaBatchTask.cancel();
+            ffaBatchTask = null;
+        }
     }
 
     private void tick() {
@@ -121,7 +131,10 @@ public final class EventScheduler {
         }
 
         if (phase == EventPhase.FFA && !eventManager.isFfaTeleported() && !ffaTpInProgress.get()) {
-            runFfaTeleport();
+            String err = runFfaTeleport();
+            if (err != null) {
+                logger.warning("FFA teleport deferred: " + err);
+            }
         }
 
         if (phase == EventPhase.ENDED && !eventManager.isCeremonyDone()) {
@@ -131,18 +144,19 @@ public final class EventScheduler {
 
     /**
      * Admin force: re-run FFA mass TP if currently in FFA phase.
-     * @return null on success, otherwise a lang-key suffix reason ({@code not-ffa}, {@code in-progress})
+     * @return null on success, otherwise a lang-key suffix reason
+     * ({@code not-ffa}, {@code in-progress}, {@code no-spawns})
      */
     public String forceFfaTeleport() {
-        if (eventManager.phase() != EventPhase.FFA) {
+        EventPhase phase = eventManager.refreshPhase(Instant.now());
+        if (phase != EventPhase.FFA) {
             return "not-ffa";
         }
         if (ffaTpInProgress.get()) {
             return "in-progress";
         }
         eventManager.clearFfaTeleported();
-        runFfaTeleport();
-        return null;
+        return runFfaTeleport();
     }
 
     /**
@@ -150,7 +164,8 @@ public final class EventScheduler {
      * @return null on success, otherwise {@code not-ended}
      */
     public String forceCeremony() {
-        if (eventManager.phase() != EventPhase.ENDED) {
+        EventPhase phase = eventManager.refreshPhase(Instant.now());
+        if (phase != EventPhase.ENDED) {
             return "not-ended";
         }
         eventManager.clearCeremonyDone();
@@ -308,34 +323,71 @@ public final class EventScheduler {
         }
     }
 
-    private void runFfaTeleport() {
+    /**
+     * @return null on success (including zero eligible players), else reason key suffix
+     */
+    private String runFfaTeleport() {
         if (!ffaTpInProgress.compareAndSet(false, true)) {
-            return;
+            return "in-progress";
         }
-        eventManager.markFfaTeleported();
-        List<Player> eligible = ffaSpawnService.eligiblePlayers();
-        Title title = Title.title(
-                lang.msg("ffa.start-title"),
-                lang.msg("ffa.start-subtitle"),
-                Title.Times.times(Duration.ofMillis(250), Duration.ofSeconds(3), Duration.ofMillis(500))
-        );
-        ffaSpawnService.teleportPlayersBatched(
-                plugin,
-                eligible,
-                FfaSpawnService.DEFAULT_BATCH_SIZE,
-                p -> {
-                    p.showTitle(title);
-                    effects.play(p, EffectService.EffectKey.FFA_TELEPORT);
-                },
-                () -> {
-                    ffaTpInProgress.set(false);
-                    startOutsideActionbar();
-                    logger.info("FFA teleport complete for " + eligible.size() + " players");
-                }
-        );
-        // Empty eligible list completes synchronously with onComplete above; still clear if batch was null path
-        if (eligible.isEmpty()) {
+        boolean marked = false;
+        try {
+            List<Player> eligible = ffaSpawnService.eligiblePlayers();
+            // Nobody to TP: one-shot complete (do not retry every tick forever)
+            if (eligible.isEmpty()) {
+                eventManager.markFfaTeleported();
+                marked = true;
+                ffaTpInProgress.set(false);
+                startOutsideActionbar();
+                logger.info("FFA teleport complete for 0 players (none eligible)");
+                return null;
+            }
+            // Preflight: world loaded + spawn points — do NOT mark yet if this fails
+            if (!ffaSpawnService.canBuildSpawns(eligible.size())) {
+                ffaTpInProgress.set(false);
+                logger.warning("FFA teleport blocked: no spawn locations (arena world / cuboid)");
+                return "no-spawns";
+            }
+
+            Title title = Title.title(
+                    lang.msg("ffa.start-title"),
+                    lang.msg("ffa.start-subtitle"),
+                    Title.Times.times(Duration.ofMillis(250), Duration.ofSeconds(3), Duration.ofMillis(500))
+            );
+            cancelFfaBatch();
+            // Mark only after preflight success so unloaded world can still be retried next tick
+            eventManager.markFfaTeleported();
+            marked = true;
+            ffaBatchTask = ffaSpawnService.teleportPlayersBatched(
+                    plugin,
+                    eligible,
+                    FfaSpawnService.DEFAULT_BATCH_SIZE,
+                    p -> {
+                        p.showTitle(title);
+                        effects.play(p, EffectService.EffectKey.FFA_TELEPORT);
+                    },
+                    () -> {
+                        ffaBatchTask = null;
+                        ffaTpInProgress.set(false);
+                        startOutsideActionbar();
+                        logger.info("FFA teleport complete for " + eligible.size() + " players");
+                    }
+            );
+            // Non-empty players + null task = spawn list empty (race) — do not keep one-shot mark
+            if (ffaBatchTask == null) {
+                eventManager.clearFfaTeleported();
+                ffaTpInProgress.set(false);
+                return "no-spawns";
+            }
+            return null;
+        } catch (RuntimeException e) {
             ffaTpInProgress.set(false);
+            ffaBatchTask = null;
+            if (marked) {
+                eventManager.clearFfaTeleported();
+            }
+            logger.warning("FFA teleport failed: " + e.getMessage());
+            return "failed";
         }
     }
 

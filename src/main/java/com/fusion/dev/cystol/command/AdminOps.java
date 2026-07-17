@@ -7,6 +7,7 @@ import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.event.EventScheduler;
+import com.fusion.dev.cystol.event.ScheduleJumps;
 import com.fusion.dev.cystol.fx.EffectService;
 import com.fusion.dev.cystol.kill.DenseRanking;
 import com.fusion.dev.cystol.kill.KillService;
@@ -129,47 +130,38 @@ public final class AdminOps {
     }
 
     public void startNow(CommandSender sender) {
-        Instant now = Instant.now().minusSeconds(1);
-        eventManager.setStart(now);
-        // Ensure we are not immediately ENDED
-        Optional<Instant> end = eventManager.end();
-        if (end.isEmpty() || !end.get().isAfter(now)) {
-            long lead = Math.max(60L, config.ffaBeforeEndSeconds() + 600L);
-            eventManager.setEnd(now.plusSeconds(lead));
-        }
+        Instant now = Instant.now();
+        ScheduleJumps.Times times = ScheduleJumps.startNow(
+                now, eventManager.end().orElse(null), config.ffaBeforeEndSeconds()
+        );
+        eventManager.applySchedule(times);
         sender.sendMessage(lang.msg("admin.startnow-ok", Map.of(
                 "phase", eventManager.phase().name(),
-                "time", TimeUtil.formatUtc(now)
+                "time", TimeUtil.formatUtc(times.start())
         )));
     }
 
     public void ffaNow(CommandSender sender) {
         Instant now = Instant.now();
-        Optional<Instant> start = eventManager.start();
-        if (start.isEmpty() || start.get().isAfter(now)) {
-            eventManager.setStart(now.minusSeconds(1));
-        }
-        Optional<Instant> end = eventManager.end();
-        long before = Math.max(60L, config.ffaBeforeEndSeconds());
-        if (end.isEmpty() || !end.get().isAfter(now)) {
-            eventManager.setEnd(now.plusSeconds(before));
-        }
-        eventManager.setFfaOverride(now);
+        ScheduleJumps.Times times = ScheduleJumps.ffaNow(
+                now,
+                eventManager.start().orElse(null),
+                eventManager.end().orElse(null),
+                config.ffaBeforeEndSeconds()
+        );
+        eventManager.applySchedule(times);
         sender.sendMessage(lang.msg("admin.ffanow-ok", Map.of(
-                "phase", eventManager.refreshPhase(Instant.now()).name(),
+                "phase", eventManager.phase().name(),
                 "time", TimeUtil.formatUtc(now)
         )));
     }
 
     public void endNow(CommandSender sender) {
         Instant now = Instant.now();
-        Optional<Instant> start = eventManager.start();
-        if (start.isEmpty() || start.get().isAfter(now)) {
-            eventManager.setStart(now.minusSeconds(1));
-        }
-        eventManager.setEnd(now);
+        ScheduleJumps.Times times = ScheduleJumps.endNow(now, eventManager.start().orElse(null));
+        eventManager.applySchedule(times);
         sender.sendMessage(lang.msg("admin.endnow-ok", Map.of(
-                "phase", eventManager.refreshPhase(Instant.now()).name()
+                "phase", eventManager.phase().name()
         )));
     }
 
@@ -248,34 +240,24 @@ public final class AdminOps {
                 sender.sendMessage(lang.msg("admin.phase-ok", Map.of("phase", "IDLE")));
             }
             case COUNTDOWN -> {
-                Instant start = now.plusSeconds(COUNTDOWN_LEAD_SECONDS);
-                eventManager.setStart(start);
-                Optional<Instant> end = eventManager.end();
-                if (end.isEmpty() || !end.get().isAfter(start)) {
-                    eventManager.setEnd(start.plusSeconds(Math.max(3600L, config.ffaBeforeEndSeconds() + 600L)));
-                }
+                ScheduleJumps.Times times = ScheduleJumps.countdown(
+                        now,
+                        eventManager.end().orElse(null),
+                        COUNTDOWN_LEAD_SECONDS,
+                        config.ffaBeforeEndSeconds()
+                );
+                eventManager.applySchedule(times);
                 sender.sendMessage(lang.msg("admin.phase-ok", Map.of(
-                        "phase", eventManager.refreshPhase(now).name()
+                        "phase", eventManager.phase().name()
                 )));
             }
             case HUNT -> {
-                Instant start = now.minusSeconds(1);
-                eventManager.setStart(start);
-                // Clear FFA override so we are not already in FFA
-                eventManager.setFfaOverride(null);
-                Optional<Instant> end = eventManager.end();
-                long before = Math.max(120L, config.ffaBeforeEndSeconds());
-                if (end.isEmpty() || !end.get().isAfter(now.plusSeconds(before))) {
-                    eventManager.setEnd(now.plusSeconds(before + 600L));
-                }
-                // Ensure FFA moment is still in the future
-                Instant ffaWanted = now.plusSeconds(before);
-                Optional<Instant> ffa = eventManager.ffaMoment();
-                if (ffa.isEmpty() || !ffa.get().isAfter(now)) {
-                    eventManager.setEnd(ffaWanted.plusSeconds(before));
-                }
+                ScheduleJumps.Times times = ScheduleJumps.hunt(
+                        now, eventManager.end().orElse(null), config.ffaBeforeEndSeconds()
+                );
+                eventManager.applySchedule(times);
                 sender.sendMessage(lang.msg("admin.phase-ok", Map.of(
-                        "phase", eventManager.refreshPhase(Instant.now()).name()
+                        "phase", eventManager.phase().name()
                 )));
             }
             case FFA -> ffaNow(sender);
