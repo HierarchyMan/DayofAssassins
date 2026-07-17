@@ -129,7 +129,7 @@ public final class CompassGui {
         return ItemBuilder.from(skull).asGuiItem(event -> {
             compassService.setTarget(viewer, target.getUniqueId());
             effects.play(viewer, EffectService.EffectKey.MENU_SELECT_TARGET);
-            viewer.sendMessage(TextUtil.component("&7Tracking: &f%target%", Map.of("target", target.getName())));
+            viewer.sendMessage(lang.msg("compass.tracking-selected", Map.of("target", target.getName())));
             viewer.closeInventory();
         });
     }

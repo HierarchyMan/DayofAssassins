@@ -2,7 +2,6 @@ package com.fusion.dev.cystol.kill;
 
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.fx.EffectService;
-import me.chancesd.sdutils.library.utils.Log;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;

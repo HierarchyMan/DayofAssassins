@@ -98,7 +98,9 @@ public final class EventManager {
     public void setEnd(Instant instant) {
         this.end = instant;
         config.setTimeEnd(instant);
+        // End/FFA schedule change must allow FFA TP again and re-run ceremony later
         ceremonyDone.set(false);
+        ffaTeleported.set(false);
         refreshPhase(Instant.now());
         persist();
     }

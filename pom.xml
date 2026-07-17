@@ -101,14 +101,17 @@
                         </goals>
                         <configuration>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes>
+                                    <include>dev.triumphteam:triumph-gui</include>
+                                    <include>org.xerial:sqlite-jdbc</include>
+                                </includes>
+                            </artifactSet>
+                            <!-- Do NOT relocate org.sqlite: META-INF/services + native NativeDB break. -->
                             <relocations>
                                 <relocation>
                                     <pattern>dev.triumphteam.gui</pattern>
                                     <shadedPattern>com.fusion.dev.cystol.libs.triumphgui</shadedPattern>
-                                </relocation>
-                                <relocation>
-                                    <pattern>org.sqlite</pattern>
-                                    <shadedPattern>com.fusion.dev.cystol.libs.sqlite</shadedPattern>
                                 </relocation>
                             </relocations>
                             <filters>

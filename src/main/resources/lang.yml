@@ -19,6 +19,8 @@ compass:
   already-have: "&cYou already have the Assassin's Compass."
   received: "&aYou received the Assassin's Compass."
   inv-full-actionbar: "&eInventory full! Free a slot and use &f/preciv compass"
+  tracking-selected: "&7Tracking: &f%target%"
+  other-world-actionbar: "&eTarget is in: &f%world%"
   item:
     inactive:
       name: "&cAssassin's Compass"

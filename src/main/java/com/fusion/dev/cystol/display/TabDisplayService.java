@@ -30,12 +30,11 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * TAB hard-depend display: bossbar + optional custom scoreboard overlay lines via placeholders replacement
- * on a dedicated temporary scoreboard when API allows.
+ * TAB hard-depend display: bossbar + scoreboard lines.
  */
 public final class TabDisplayService {
 
-    private static final String BOSSBAR_NAME = "dayofassassins_event";
+    private static final String BOSSBAR_TITLE_SEED = "Day of Assassins";
     private static final String SCOREBOARD_NAME = "dayofassassins_sb";
 
     private final EventManager eventManager;
@@ -47,6 +46,7 @@ public final class TabDisplayService {
     private BossBar bossBar;
     private Scoreboard scoreboard;
     private boolean available = true;
+    private boolean active;
 
     public TabDisplayService(
             EventManager eventManager,
@@ -72,26 +72,31 @@ public final class TabDisplayService {
             }
             BossBarManager bbm = api.getBossBarManager();
             if (bbm != null && config.tabBossbarEnabled()) {
-                bossBar = bbm.createBossBar(BOSSBAR_NAME, "Day of Assassins", 0f, BarColor.RED, BarStyle.PROGRESS);
+                bossBar = bbm.createBossBar(BOSSBAR_TITLE_SEED, 0f, BarColor.RED, BarStyle.PROGRESS);
             }
             ScoreboardManager sbm = api.getScoreboardManager();
             if (sbm != null) {
-                List<String> lines = new ArrayList<>();
-                for (PluginConfig.ScoreboardLine line : config.scoreboardLines()) {
-                    // pad list to index
-                    while (lines.size() <= line.line()) {
-                        lines.add("");
-                    }
-                    lines.set(line.line(), line.text());
-                }
+                List<String> lines = buildLineTemplates();
                 if (!lines.isEmpty()) {
-                    scoreboard = sbm.createScoreboard(SCOREBOARD_NAME, "&cDay of Assassins", lines);
+                    scoreboard = sbm.createScoreboard(SCOREBOARD_NAME, colorAmpersandToSection("&cDay of Assassins"), lines);
                 }
             }
         } catch (Throwable t) {
             available = false;
             logger.log(Level.SEVERE, "Failed to init TAB display", t);
         }
+    }
+
+    private List<String> buildLineTemplates() {
+        List<String> lines = new ArrayList<>();
+        for (PluginConfig.ScoreboardLine line : config.scoreboardLines()) {
+            while (lines.size() <= line.line()) {
+                lines.add(" ");
+            }
+            lines.set(line.line(), colorAmpersandToSection(line.text()));
+        }
+        // remove leading empties carefully — TAB may not like empty list
+        return lines;
     }
 
     public void update(Instant now) {
@@ -114,7 +119,7 @@ public final class TabDisplayService {
                 Optional<DenseRanking.Entry> top = killService.topKiller();
                 if (top.isPresent()) {
                     title = TextUtil.apply(lang.raw("bossbar.title"), Map.of(
-                            "top_killer", top.get().name(),
+                            "top_killer", top.get().name() == null ? "?" : top.get().name(),
                             "top_kills", String.valueOf(top.get().kills())
                     ));
                 } else {
@@ -123,13 +128,14 @@ public final class TabDisplayService {
                 progress = (float) timeline.liveFillProgress(now);
             }
 
+            active = true;
             if (bossBar != null) {
                 bossBar.setTitle(colorAmpersandToSection(title));
                 bossBar.setProgress(Math.max(0f, Math.min(1f, progress)));
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     TabPlayer tp = TabAPI.getInstance().getPlayer(p.getUniqueId());
-                    if (tp != null) {
-                        TabAPI.getInstance().getBossBarManager().showBossBar(tp, bossBar);
+                    if (tp != null && !bossBar.containsPlayer(tp)) {
+                        bossBar.addPlayer(tp);
                     }
                 }
             }
@@ -140,24 +146,35 @@ public final class TabDisplayService {
                 ph.put("top_killer", top.map(DenseRanking.Entry::name).orElse("—"));
                 ph.put("top_kills", top.map(e -> String.valueOf(e.kills())).orElse("0"));
                 ph.put("phase", phase.name());
-                List<String> rendered = new ArrayList<>();
-                for (PluginConfig.ScoreboardLine line : config.scoreboardLines()) {
-                    while (rendered.size() <= line.line()) {
-                        rendered.add("");
-                    }
-                    rendered.set(line.line(), colorAmpersandToSection(TextUtil.apply(line.text(), ph)));
-                }
-                // TAB Scoreboard API may support setLines in newer versions
+                // update lines by remove/add (API has no setLines on 5.0.7)
                 try {
-                    var method = scoreboard.getClass().getMethod("setLines", List.class);
-                    method.invoke(scoreboard, rendered);
-                } catch (NoSuchMethodException ignored) {
-                    // recreate not available every tick — skip line update
+                    List<?> current = scoreboard.getLines();
+                    int size = current == null ? 0 : current.size();
+                    for (int i = size - 1; i >= 0; i--) {
+                        scoreboard.removeLine(i);
+                    }
+                    List<String> rendered = new ArrayList<>();
+                    int maxIdx = -1;
+                    for (PluginConfig.ScoreboardLine line : config.scoreboardLines()) {
+                        maxIdx = Math.max(maxIdx, line.line());
+                    }
+                    for (int i = 0; i <= maxIdx; i++) {
+                        rendered.add(" ");
+                    }
+                    for (PluginConfig.ScoreboardLine line : config.scoreboardLines()) {
+                        rendered.set(line.line(), colorAmpersandToSection(TextUtil.apply(line.text(), ph)));
+                    }
+                    for (String line : rendered) {
+                        scoreboard.addLine(line == null || line.isBlank() ? " " : line);
+                    }
+                } catch (Throwable t) {
+                    logger.log(Level.FINE, "scoreboard line refresh failed", t);
                 }
+                ScoreboardManager sbm = TabAPI.getInstance().getScoreboardManager();
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     TabPlayer tp = TabAPI.getInstance().getPlayer(p.getUniqueId());
-                    if (tp != null) {
-                        TabAPI.getInstance().getScoreboardManager().showScoreboard(tp, scoreboard);
+                    if (tp != null && sbm != null) {
+                        sbm.showScoreboard(tp, scoreboard);
                     }
                 }
             }
@@ -167,17 +184,14 @@ public final class TabDisplayService {
     }
 
     public void clear() {
-        if (!available) {
+        if (!available || !active) {
             return;
         }
+        active = false;
         try {
             if (bossBar != null) {
-                BossBarManager bbm = TabAPI.getInstance().getBossBarManager();
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    TabPlayer tp = TabAPI.getInstance().getPlayer(p.getUniqueId());
-                    if (tp != null && bbm != null) {
-                        bbm.hideBossBar(tp, bossBar);
-                    }
+                for (TabPlayer tp : new ArrayList<>(bossBar.getPlayers())) {
+                    bossBar.removePlayer(tp);
                 }
             }
             if (scoreboard != null) {

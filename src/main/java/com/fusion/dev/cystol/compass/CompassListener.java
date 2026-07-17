@@ -158,43 +158,34 @@ public final class CompassListener implements Listener {
         compassGui.open(player);
     }
 
-    @EventHandler(priority = EventPriority.HIGH)
-    public void onDrop(PlayerDropItemEvent event) {
-        Item item = event.getItemDrop();
-        if (compassService.isCompass(item.getItemStack())) {
-            event.setCancelled(true);
-            item.remove();
-            // destroy — also remove from inv already dropped; restore cancel means still in inv
-            // Design: destroy entity. Cancelling keeps item; instead allow drop then remove entity:
-        }
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    /**
+     * Drop/throw destroys the compass: allow the drop entity to spawn, then remove it
+     * immediately and strip any remaining plugin compasses so nothing is retained or pickupable.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
     public void onDropDestroy(PlayerDropItemEvent event) {
-        // if another plugin allows, destroy entity
         Item item = event.getItemDrop();
-        if (compassService.isCompass(item.getItemStack())) {
-            Bukkit.getScheduler().runTask(plugin, item::remove);
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onDropForceDestroy(PlayerDropItemEvent event) {
-        ItemStack stack = event.getItemDrop().getItemStack();
-        if (!compassService.isCompass(stack)) {
+        if (!compassService.isCompass(item.getItemStack())) {
             return;
         }
-        // Cancel to prevent pickup race, remove item from player by consuming
-        event.setCancelled(true);
+        // Do not cancel — cancelling would keep the item in the player's hand.
+        item.remove();
         Player player = event.getPlayer();
-        ItemStack hand = player.getInventory().getItemInMainHand();
-        if (compassService.isCompass(hand)) {
-            player.getInventory().setItemInMainHand(null);
-        } else {
-            ItemStack off = player.getInventory().getItemInOffHand();
-            if (compassService.isCompass(off)) {
-                player.getInventory().setItemInOffHand(null);
+        stripAllCompasses(player);
+    }
+
+    private void stripAllCompasses(Player player) {
+        ItemStack[] contents = player.getInventory().getContents();
+        for (int i = 0; i < contents.length; i++) {
+            if (compassService.isCompass(contents[i])) {
+                player.getInventory().setItem(i, null);
             }
+        }
+        if (compassService.isCompass(player.getInventory().getItemInOffHand())) {
+            player.getInventory().setItemInOffHand(null);
+        }
+        if (compassService.isCompass(player.getItemOnCursor())) {
+            player.setItemOnCursor(null);
         }
     }
 

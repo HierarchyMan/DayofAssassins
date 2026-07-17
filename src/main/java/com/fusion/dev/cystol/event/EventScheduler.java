@@ -67,6 +67,12 @@ public final class EventScheduler {
 
     public void start() {
         stop();
+        // Recovery: if already mid-event after restart, ensure online players get compasses
+        EventPhase current = eventManager.refreshPhase(Instant.now());
+        lastPhase = current;
+        if (current == EventPhase.HUNT || current == EventPhase.FFA) {
+            compassListener.giveToAllOnline();
+        }
         tickTask = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L);
     }
 
@@ -84,11 +90,12 @@ public final class EventScheduler {
     private void tick() {
         Instant now = Instant.now();
         EventPhase phase = eventManager.refreshPhase(now);
-        eventManager.persist();
 
         if (phase != lastPhase) {
             onPhaseChange(lastPhase, phase, now);
             lastPhase = phase;
+            // Persist only on phase transitions (flags flush on markFfa/markCeremony/setters)
+            eventManager.persist();
         }
 
         if (phase == EventPhase.COUNTDOWN || phase == EventPhase.HUNT || phase == EventPhase.FFA) {
@@ -114,10 +121,9 @@ public final class EventScheduler {
 
     private void onPhaseChange(EventPhase from, EventPhase to, Instant now) {
         logger.info("Event phase: " + from + " -> " + to);
-        if (to == EventPhase.HUNT && from == EventPhase.COUNTDOWN) {
-            compassListener.giveToAllOnline();
-        }
-        if (to == EventPhase.HUNT && from == EventPhase.IDLE) {
+        // Any transition into an active scoring phase should mass-give compasses
+        if ((to == EventPhase.HUNT || to == EventPhase.FFA)
+                && from != EventPhase.HUNT && from != EventPhase.FFA) {
             compassListener.giveToAllOnline();
         }
     }

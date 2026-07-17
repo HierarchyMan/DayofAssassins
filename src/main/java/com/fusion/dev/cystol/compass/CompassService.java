@@ -220,18 +220,13 @@ public final class CompassService {
                     compassMeta.setLodestoneTracked(false);
                 } else {
                     compassMeta.setLodestone(null);
-                    player.sendActionBar(TextUtil.component(
-                            lang.raw("compass.item.tracking-other-world.lore").contains("%world%")
-                                    ? "&eTarget is in: &f%world%"
-                                    : "&eTarget is in: &f%world%",
-                            Map.of("world", target.getWorld().getName())));
                 }
                 stack.setItemMeta(compassMeta);
             }
         }
-        // action bar other dimension
+        // action bar other dimension (lang-driven)
         if (!target.getWorld().equals(player.getWorld())) {
-            player.sendActionBar(TextUtil.component("&eTarget is in: &f%world%",
+            player.sendActionBar(lang.msg("compass.other-world-actionbar",
                     Map.of("world", target.getWorld().getName())));
         }
     }
