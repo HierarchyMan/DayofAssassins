@@ -1,0 +1,37 @@
+name: DayOfAssassins
+version: ${project.version}
+main: com.fusion.dev.cystol.DayOfAssassinsPlugin
+api-version: '1.21'
+author: cystol
+description: Pre-Civilization - Day of Assassins event plugin
+depend: [TAB, PvPManager]
+
+commands:
+  event:
+    description: Show Day of Assassins event description
+    usage: /event
+    permission: preciv.event
+  preciv:
+    description: Day of Assassins commands
+    usage: /preciv <compass|killtop|admin>
+    permission: preciv.use
+
+permissions:
+  preciv.use:
+    description: Base access to /preciv
+    default: true
+  preciv.event:
+    description: Use /event
+    default: true
+  preciv.compass:
+    description: Use /preciv compass
+    default: true
+  preciv.killtop:
+    description: View kill leaderboard
+    default: true
+  preciv.admin:
+    description: Admin setup commands
+    default: op
+  preciv.ffa.tp.bypass:
+    description: Skip FFA mass teleport
+    default: false

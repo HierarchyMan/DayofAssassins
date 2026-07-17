@@ -1,0 +1,139 @@
+times:
+  start: ""
+  end: ""
+  ffa: ""
+
+ffa:
+  before-end-seconds: 1800
+  announce-lead-seconds: 3600
+  announce-interval-seconds: 600
+  outside-actionbar-seconds: 60
+  max-diameter-fraction: 0.75
+  min-air-above: 2
+  y-search-range: 12
+  ring-margin-blocks: 2
+
+arena:
+  world: world
+  pos1:
+    x: 0
+    y: 64
+    z: 0
+  pos2:
+    x: 100
+    y: 80
+    z: 100
+  centerspawn:
+    x: 50.5
+    y: 65.0
+    z: 50.5
+    yaw: 0.0
+    pitch: 0.0
+
+storage:
+  file: data.db
+
+compass:
+  material: COMPASS
+  custom-model-data: 0
+  full-inv-actionbar-seconds: 60
+
+wand:
+  material: BLAZE_ROD
+  custom-model-data: 0
+
+tab:
+  scoreboard:
+    lines:
+      - line: 3
+        text: "&c&lDay of Assassins"
+      - line: 4
+        text: "&7Top: &f%top_killer% &8(%top_kills%)"
+      - line: 5
+        text: "&7Phase: &f%phase%"
+  bossbar:
+    enabled: true
+    color: RED
+    style: PROGRESS
+
+effects:
+  enabled: true
+  compass:
+    open-gui:
+      sound:
+        enabled: true
+        sound: "minecraft:item.spyglass.use"
+        volume: 1.0
+        pitch: 1.0
+      particle:
+        enabled: true
+        particle: ENCHANT
+        count: 12
+  menu:
+    select-target:
+      sound:
+        enabled: true
+        sound: "minecraft:ui.button.click"
+        volume: 1.0
+        pitch: 1.2
+      particle:
+        enabled: true
+        particle: HAPPY_VILLAGER
+        count: 8
+    page-turn:
+      sound:
+        enabled: true
+        sound: "minecraft:item.book.page_turn"
+        volume: 0.8
+        pitch: 1.0
+      particle:
+        enabled: false
+        particle: CRIT
+        count: 4
+    deny:
+      sound:
+        enabled: true
+        sound: "minecraft:entity.villager.no"
+        volume: 0.7
+        pitch: 1.0
+      particle:
+        enabled: false
+        particle: SMOKE
+        count: 3
+  kill:
+    credited:
+      sound:
+        enabled: true
+        sound: "minecraft:entity.player.levelup"
+        volume: 1.0
+        pitch: 1.0
+      particle:
+        enabled: true
+        particle: SOUL
+        count: 20
+  ffa:
+    announce:
+      sound:
+        enabled: true
+        sound: "minecraft:block.note_block.pling"
+        volume: 1.0
+        pitch: 1.0
+    teleport:
+      sound:
+        enabled: true
+        sound: "minecraft:entity.enderman.teleport"
+        volume: 1.0
+        pitch: 1.0
+  end:
+    normal:
+      sound:
+        enabled: true
+        sound: "minecraft:ui.toast.challenge_complete"
+        volume: 0.8
+        pitch: 1.0
+    top3:
+      sound:
+        enabled: true
+        sound: "minecraft:ui.toast.challenge_complete"
+        volume: 1.0
+        pitch: 1.4

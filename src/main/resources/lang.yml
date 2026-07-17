@@ -1,0 +1,121 @@
+messages:
+  no-permission: "&cNo permission."
+  players-only: "&cPlayers only."
+  reload-ok: "&aDay of Assassins config reloaded."
+
+event:
+  description:
+    - "&c&lDay of Assassins"
+    - "&7Hunt players with the Assassin's Compass."
+    - "&7Rack up kills — highest kills wins."
+    - "&7A final deathmatch teleports you near the end."
+
+bossbar:
+  countdown-title: "&cDay of Assassins &7starts in &f%countdown%"
+  title: "&cDay of Assassins &7| &f%top_killer%"
+  title-no-kills: "&cDay of Assassins &7| &8Nobody yet"
+
+compass:
+  already-have: "&cYou already have the Assassin's Compass."
+  received: "&aYou received the Assassin's Compass."
+  inv-full-actionbar: "&eInventory full! Free a slot and use &f/preciv compass"
+  item:
+    inactive:
+      name: "&cAssassin's Compass"
+      lore:
+        - "&7Status: &8Not tracking"
+        - "&7Right-click to choose a target"
+    tracking:
+      name: "&cAssassin's Compass"
+      lore:
+        - "&7Status: &aTracking"
+        - "&7Target: &f%target%"
+        - "&7World: &f%world%"
+        - "&7Right-click to change target"
+    tracking-other-world:
+      name: "&cAssassin's Compass"
+      lore:
+        - "&7Status: &eOther dimension"
+        - "&7Target: &f%target%"
+        - "&7Dimension: &f%world%"
+        - "&7Right-click to change target"
+    lost-target:
+      name: "&cAssassin's Compass"
+      lore:
+        - "&7Status: &cTarget unavailable"
+        - "&7Right-click to choose a new target"
+  gui:
+    title: "&8Track a player"
+    player:
+      name: "&f%player%"
+      lore:
+        - "&7World: &f%world%"
+        - "&7Kills: &c%kills%"
+        - "&eClick to track"
+      lore-selected:
+        - "&7World: &f%world%"
+        - "&7Kills: &c%kills%"
+        - "&aCurrently tracking"
+        - "&eClick to re-select"
+    next-page:
+      name: "&aNext page"
+      lore:
+        - "&7Page &f%page%&7/&f%pages%"
+    prev-page:
+      name: "&aPrevious page"
+      lore:
+        - "&7Page &f%page%&7/&f%pages%"
+    info:
+      name: "&eHow to use"
+      lore:
+        - "&7Select a player to track."
+        - "&7Only one target at a time."
+    no-players:
+      name: "&cNo players"
+      lore:
+        - "&7Nobody online to track."
+
+killtop:
+  header: "&c&lKill Leaderboard"
+  entry: "&e#%position% &f%player% &7- &c%kills% kills"
+  empty: "&7No kills yet."
+
+ffa:
+  announce-title: "&c&lFinal deathmatch"
+  announce-subtitle: "&7Begins in &f%countdown%"
+  start-title: "&c&lFIGHT"
+  start-subtitle: "&7The final deathmatch has begun"
+  outside-actionbar: "&eEvent finale is here — &f/warp pvparena"
+
+end:
+  title:
+    place-1:
+      title: "&6&lGOLD — #1"
+      subtitle: "&e%kills% kills"
+    place-2:
+      title: "&f&lSILVER — #2"
+      subtitle: "&7%kills% kills"
+    place-3:
+      title: "&c&lBRONZE — #3"
+      subtitle: "&7%kills% kills"
+    place-other:
+      title: "&7Place &f#%place%"
+      subtitle: "&7%kills% kills"
+
+admin:
+  start-set: "&aStart time set to &f%time% &7(UTC+0)"
+  end-set: "&aEnd time set to &f%time% &7(UTC+0)"
+  ffa-set: "&aFFA override set to &f%time% &7(UTC+0)"
+  ffa-cleared: "&aFFA override cleared (using end − offset)."
+  centerspawn-set: "&aArena center spawn set to your location."
+  pos1-set: "&aArena pos1 set to &f%x% %y% %z%"
+  pos2-set: "&aArena pos2 set to &f%x% %y% %z%"
+  wand-given: "&aArena wand given. Left-click pos1, right-click pos2."
+  invalid-time: "&cInvalid time. Use yyyy/MM/dd HH:mm:ss (UTC+0)"
+  not-player: "&cPlayers only for this action."
+
+wand:
+  name: "&6Arena Selection Wand"
+  lore:
+    - "&7Left-click: set pos1"
+    - "&7Right-click: set pos2"
