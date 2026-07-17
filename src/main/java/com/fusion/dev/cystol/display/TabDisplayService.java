@@ -7,8 +7,6 @@ import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.event.EventTimeline;
 import com.fusion.dev.cystol.kill.DenseRanking;
 import com.fusion.dev.cystol.kill.KillService;
-import com.fusion.dev.cystol.util.TextUtil;
-import com.fusion.dev.cystol.util.TimeUtil;
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.bossbar.BarColor;
@@ -22,15 +20,13 @@ import org.bukkit.entity.Player;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * TAB hard-depend display: bossbar + scoreboard lines.
+ * TAB hard-depend display: bossbar + scoreboard lines (rendered via {@link EventDisplayRenderer}).
  */
 public final class TabDisplayService {
 
@@ -76,27 +72,19 @@ public final class TabDisplayService {
             }
             ScoreboardManager sbm = api.getScoreboardManager();
             if (sbm != null) {
-                List<String> lines = buildLineTemplates();
+                List<String> lines = EventDisplayRenderer.buildTemplateLines(config.scoreboardLines());
                 if (!lines.isEmpty()) {
-                    scoreboard = sbm.createScoreboard(SCOREBOARD_NAME, colorAmpersandToSection("&cDay of Assassins"), lines);
+                    scoreboard = sbm.createScoreboard(
+                            SCOREBOARD_NAME,
+                            EventDisplayRenderer.colorAmpersandToSection("&cDay of Assassins"),
+                            lines
+                    );
                 }
             }
         } catch (Throwable t) {
             available = false;
             logger.log(Level.SEVERE, "Failed to init TAB display", t);
         }
-    }
-
-    private List<String> buildLineTemplates() {
-        List<String> lines = new ArrayList<>();
-        for (PluginConfig.ScoreboardLine line : config.scoreboardLines()) {
-            while (lines.size() <= line.line()) {
-                lines.add(" ");
-            }
-            lines.set(line.line(), colorAmpersandToSection(line.text()));
-        }
-        // remove leading empties carefully — TAB may not like empty list
-        return lines;
     }
 
     public void update(Instant now) {
@@ -106,32 +94,25 @@ public final class TabDisplayService {
         try {
             EventTimeline timeline = eventManager.timeline();
             EventPhase phase = timeline.phaseAt(now);
-            String title;
-            float progress;
-            if (phase == EventPhase.COUNTDOWN) {
-                long secs = eventManager.start()
-                        .map(s -> Math.max(0, s.getEpochSecond() - now.getEpochSecond()))
-                        .orElse(0L);
-                String countdown = TimeUtil.formatCountdown(secs);
-                title = TextUtil.apply(lang.raw("bossbar.countdown-title"), Map.of("countdown", countdown));
-                progress = (float) timeline.countdownFillProgress(now, config.announceLeadSeconds());
-            } else {
-                Optional<DenseRanking.Entry> top = killService.topKiller();
-                if (top.isPresent()) {
-                    title = TextUtil.apply(lang.raw("bossbar.title"), Map.of(
-                            "top_killer", top.get().name() == null ? "?" : top.get().name(),
-                            "top_kills", String.valueOf(top.get().kills())
-                    ));
-                } else {
-                    title = TextUtil.apply(lang.raw("bossbar.title-no-kills"), Map.of());
-                }
-                progress = (float) timeline.liveFillProgress(now);
-            }
+            Optional<DenseRanking.Entry> top = killService.topKiller();
+            String topName = top.map(DenseRanking.Entry::name).orElse(null);
+            Integer topKills = top.map(DenseRanking.Entry::kills).orElse(null);
+
+            EventDisplayRenderer.BossBarView bar = EventDisplayRenderer.renderBossBar(
+                    timeline,
+                    now,
+                    config.announceLeadSeconds(),
+                    lang.raw("bossbar.countdown-title"),
+                    lang.raw("bossbar.title"),
+                    lang.raw("bossbar.title-no-kills"),
+                    topName,
+                    topKills
+            );
 
             active = true;
             if (bossBar != null) {
-                bossBar.setTitle(colorAmpersandToSection(title));
-                bossBar.setProgress(Math.max(0f, Math.min(1f, progress)));
+                bossBar.setTitle(EventDisplayRenderer.colorAmpersandToSection(bar.titleLegacyAmpersand()));
+                bossBar.setProgress(bar.progress());
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     TabPlayer tp = TabAPI.getInstance().getPlayer(p.getUniqueId());
                     if (tp != null && !bossBar.containsPlayer(tp)) {
@@ -141,30 +122,19 @@ public final class TabDisplayService {
             }
 
             if (scoreboard != null) {
-                Map<String, String> ph = new HashMap<>();
-                Optional<DenseRanking.Entry> top = killService.topKiller();
-                ph.put("top_killer", top.map(DenseRanking.Entry::name).orElse("—"));
-                ph.put("top_kills", top.map(e -> String.valueOf(e.kills())).orElse("0"));
-                ph.put("phase", phase.name());
-                // update lines by remove/add (API has no setLines on 5.0.7)
+                EventDisplayRenderer.ScoreboardView sb = EventDisplayRenderer.renderScoreboardLines(
+                        config.scoreboardLines(),
+                        phase,
+                        topName,
+                        topKills == null ? 0 : topKills
+                );
                 try {
                     List<?> current = scoreboard.getLines();
                     int size = current == null ? 0 : current.size();
                     for (int i = size - 1; i >= 0; i--) {
                         scoreboard.removeLine(i);
                     }
-                    List<String> rendered = new ArrayList<>();
-                    int maxIdx = -1;
-                    for (PluginConfig.ScoreboardLine line : config.scoreboardLines()) {
-                        maxIdx = Math.max(maxIdx, line.line());
-                    }
-                    for (int i = 0; i <= maxIdx; i++) {
-                        rendered.add(" ");
-                    }
-                    for (PluginConfig.ScoreboardLine line : config.scoreboardLines()) {
-                        rendered.set(line.line(), colorAmpersandToSection(TextUtil.apply(line.text(), ph)));
-                    }
-                    for (String line : rendered) {
+                    for (String line : sb.linesSectionColor()) {
                         scoreboard.addLine(line == null || line.isBlank() ? " " : line);
                     }
                 } catch (Throwable t) {
@@ -208,10 +178,16 @@ public final class TabDisplayService {
         }
     }
 
-    private static String colorAmpersandToSection(String s) {
-        if (s == null) {
-            return "";
-        }
-        return s.replace('&', '§');
+    /** Test/diag: whether TAB objects were created (null API → false). */
+    public boolean isAvailable() {
+        return available;
+    }
+
+    public boolean hasBossBar() {
+        return bossBar != null;
+    }
+
+    public boolean hasScoreboard() {
+        return scoreboard != null;
     }
 }

@@ -6,6 +6,11 @@ author: cystol
 description: Pre-Civilization - Day of Assassins event plugin
 depend: [TAB, PvPManager]
 
+# Paper library loader: downloads from Maven Central into the plugin classloader
+# (keeps the plugin jar small; sqlite natives are not shaded into our jar)
+libraries:
+  - org.xerial:sqlite-jdbc:3.47.2.0
+
 commands:
   event:
     description: Show Day of Assassins event description

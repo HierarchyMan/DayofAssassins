@@ -44,29 +44,43 @@ public final class EffectService {
         this.logger = logger;
     }
 
+    /**
+     * Resolve plan without playing — used by tests and diagnostics.
+     */
+    public EffectPlan plan(EffectKey key) {
+        if (key == null) {
+            return EffectPlan.disabled();
+        }
+        return EffectResolver.resolve(config.effectsEnabled(), config.effectSection(key.path()));
+    }
+
     public void play(Player player, EffectKey key) {
+        if (player == null) {
+            return;
+        }
         play(player, key, player.getLocation());
     }
 
     public void play(Player player, EffectKey key, Location at) {
-        if (player == null || key == null || !config.effectsEnabled()) {
+        if (player == null || key == null) {
             return;
         }
-        ConfigurationSection section = config.effectSection(key.path());
-        if (section == null) {
+        EffectPlan plan = plan(key);
+        if (!plan.shouldPlay()) {
             return;
         }
-        playSound(player, section.getConfigurationSection("sound"));
-        playParticle(player, at != null ? at : player.getLocation(), section.getConfigurationSection("particle"));
+        if (plan.hasSound()) {
+            playSound(player, plan);
+        }
+        if (plan.hasParticle()) {
+            playParticle(at != null ? at : player.getLocation(), plan);
+        }
     }
 
-    private void playSound(Player player, ConfigurationSection sound) {
-        if (sound == null || !sound.getBoolean("enabled", true)) {
-            return;
-        }
-        String name = sound.getString("sound", "");
-        float volume = (float) sound.getDouble("volume", 1.0);
-        float pitch = (float) sound.getDouble("pitch", 1.0);
+    private void playSound(Player player, EffectPlan plan) {
+        String name = plan.soundName();
+        float volume = plan.volume();
+        float pitch = plan.pitch();
         try {
             if (name.startsWith("minecraft:")) {
                 player.playSound(player.getLocation(), name, volume, pitch);
@@ -83,18 +97,22 @@ public final class EffectService {
         }
     }
 
-    private void playParticle(Player player, Location at, ConfigurationSection particle) {
-        if (particle == null || !particle.getBoolean("enabled", true) || at == null || at.getWorld() == null) {
+    private void playParticle(Location at, EffectPlan plan) {
+        if (at == null || at.getWorld() == null) {
             return;
         }
-        String name = particle.getString("particle", "CRIT");
-        int count = particle.getInt("count", 8);
-        double ox = particle.getDouble("offset-x", 0.25);
-        double oy = particle.getDouble("offset-y", 0.3);
-        double oz = particle.getDouble("offset-z", 0.25);
+        String name = plan.particleName();
         try {
             Particle p = Particle.valueOf(name.toUpperCase(Locale.ROOT));
-            at.getWorld().spawnParticle(p, at.clone().add(0, 1, 0), count, ox, oy, oz, 0.01);
+            at.getWorld().spawnParticle(
+                    p,
+                    at.clone().add(0, 1, 0),
+                    plan.particleCount(),
+                    plan.offsetX(),
+                    plan.offsetY(),
+                    plan.offsetZ(),
+                    0.01
+            );
         } catch (Exception e) {
             logger.log(Level.FINE, "Invalid particle " + name, e);
         }

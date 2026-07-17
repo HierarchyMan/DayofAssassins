@@ -60,10 +60,12 @@
             <artifactId>triumph-gui</artifactId>
             <version>3.1.11</version>
         </dependency>
+        <!-- Runtime: Paper downloads via plugin.yml libraries. Compile/test only here. -->
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
             <version>3.47.2.0</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -103,11 +105,10 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <artifactSet>
                                 <includes>
+                                    <!-- Only Triumph GUI (relocated). sqlite-jdbc is a Paper library download. -->
                                     <include>dev.triumphteam:triumph-gui</include>
-                                    <include>org.xerial:sqlite-jdbc</include>
                                 </includes>
                             </artifactSet>
-                            <!-- Do NOT relocate org.sqlite: META-INF/services + native NativeDB break. -->
                             <relocations>
                                 <relocation>
                                     <pattern>dev.triumphteam.gui</pattern>
