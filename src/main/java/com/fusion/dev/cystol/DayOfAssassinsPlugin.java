@@ -35,10 +35,19 @@ import java.util.logging.Level;
 /**
  * Paper-only plugin (loaded via {@code paper-plugin.yml}, not Bukkit {@code plugin.yml}).
  *
- * <p><b>Agents / AI contributors:</b> do <b>not</b> add unit tests for every small UX string,
- * config default, or scheduler glue. Prefer a few high-value tests for pure math, ranking,
- * timeline, and config resolution. Manual / in-game checks are fine for titles, sounds, and
- * join messaging. Skip one-off tests unless logic is non-trivial or regression-prone.
+ * <p><b>Agents / AI — testing policy (read this):</b>
+ * Do <b>not</b> write basic-ass unit tests. Banned by default:
+ * <ul>
+ *   <li>lang.yml / title / subtitle / actionbar / chat copy presence or wording</li>
+ *   <li>“every config key exists”, effect-key laundry lists, sound-name string asserts</li>
+ *   <li>trivial math ({@code a/2}, clamp, color {@code &→§}, placeholder replace alone)</li>
+ *   <li>scheduler glue, Bukkit event wiring, “showTitle was called” style tests</li>
+ *   <li>re-testing Java/Bukkit/general APIs or re-implementing formulas in asserts</li>
+ * </ul>
+ * Keep a <b>small</b> suite of high-value tests only: spawn geometry, dense ranking, event
+ * timeline phases, async kill flush, SQLite schema path, non-obvious pure helpers (e.g. tab
+ * completion tree). Prefer one sharp case over five happy-path duplicates. UX is validated
+ * in-game, not with JUnit string archaeology.
  */
 public final class DayOfAssassinsPlugin extends JavaPlugin {
 

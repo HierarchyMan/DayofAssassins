@@ -7,27 +7,11 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+/** Dense place sharing: ties share place; next rank is place+1 (not skip-by-count). */
 class DenseRankingTest {
 
     @Test
-    void sharedFirstThenSecondNotThird() {
-        UUID a = UUID.randomUUID();
-        UUID b = UUID.randomUUID();
-        UUID c = UUID.randomUUID();
-        List<DenseRanking.Entry> ranked = DenseRanking.rank(List.of(
-                new DenseRanking.KillRecord(a, "Alice", 10),
-                new DenseRanking.KillRecord(b, "Bob", 10),
-                new DenseRanking.KillRecord(c, "Cara", 8)
-        ));
-        assertEquals(3, ranked.size());
-        // both 10 are place 1
-        assertEquals(1, ranked.stream().filter(e -> e.kills() == 10).findFirst().orElseThrow().place());
-        assertEquals(2, ranked.stream().filter(e -> e.kills() == 10).count());
-        assertEquals(2, ranked.stream().filter(e -> e.kills() == 8).findFirst().orElseThrow().place());
-    }
-
-    @Test
-    void multiTierDensePlaces() {
+    void densePlacesShareAndAdvanceByOne() {
         List<DenseRanking.Entry> ranked = DenseRanking.rank(List.of(
                 new DenseRanking.KillRecord(UUID.randomUUID(), "A", 10),
                 new DenseRanking.KillRecord(UUID.randomUUID(), "B", 10),
@@ -35,7 +19,9 @@ class DenseRankingTest {
                 new DenseRanking.KillRecord(UUID.randomUUID(), "D", 8),
                 new DenseRanking.KillRecord(UUID.randomUUID(), "E", 5)
         ));
+        assertEquals(5, ranked.size());
         assertEquals(1, placeForKills(ranked, 10));
+        assertEquals(2, ranked.stream().filter(e -> e.kills() == 10).count());
         assertEquals(2, placeForKills(ranked, 8));
         assertEquals(3, placeForKills(ranked, 5));
     }
