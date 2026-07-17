@@ -55,7 +55,7 @@ class PrecivSuggestionsTest {
     @Test
     void adminSetTargetsAndTimeTokens() {
         List<String> targets = PrecivSuggestions.complete("admin set ", true, true, true, NOW);
-        assertEquals(6, targets.size());
+        assertEquals(8, targets.size());
         assertTrue(targets.stream().allMatch(s -> s.startsWith("admin set ")));
         assertEquals(List.of("admin set starttime"),
                 PrecivSuggestions.complete("admin set st", true, true, true, NOW));

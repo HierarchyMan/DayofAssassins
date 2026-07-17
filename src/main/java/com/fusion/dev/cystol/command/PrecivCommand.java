@@ -181,7 +181,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             case "set" -> {
                 if (args.length < 2) {
                     sender.sendMessage(Component.text(
-                            "/preciv admin set <starttime|endtime|ffatime|centerspawn|pos1|pos2>"
+                            "/preciv admin set <starttime|endtime|ffatime|centerspawn|pos1|pos2|spawnpos1|spawnpos2>"
                     ));
                     return;
                 }
@@ -193,6 +193,8 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
                     case "centerspawn" -> setCenter(sender);
                     case "pos1" -> setPos(sender, true);
                     case "pos2" -> setPos(sender, false);
+                    case "spawnpos1" -> setSpawnPos(sender, true);
+                    case "spawnpos2" -> setSpawnPos(sender, false);
                     default -> sender.sendMessage(Component.text("Unknown admin set target."));
                 }
             }
@@ -261,6 +263,30 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
         } else {
             config.setPos2(loc.getX(), loc.getY(), loc.getZ());
             player.sendMessage(lang.msg("admin.pos2-set", Map.of(
+                    "x", String.valueOf(loc.getBlockX()),
+                    "y", String.valueOf(loc.getBlockY()),
+                    "z", String.valueOf(loc.getBlockZ())
+            )));
+        }
+    }
+
+    private void setSpawnPos(CommandSender sender, boolean pos1) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(lang.msg("admin.not-player"));
+            return;
+        }
+        Location loc = player.getLocation();
+        config.setSpawnWorld(loc.getWorld().getName());
+        if (pos1) {
+            config.setSpawnPos1(loc.getX(), loc.getY(), loc.getZ());
+            player.sendMessage(lang.msg("admin.spawnpos1-set", Map.of(
+                    "x", String.valueOf(loc.getBlockX()),
+                    "y", String.valueOf(loc.getBlockY()),
+                    "z", String.valueOf(loc.getBlockZ())
+            )));
+        } else {
+            config.setSpawnPos2(loc.getX(), loc.getY(), loc.getZ());
+            player.sendMessage(lang.msg("admin.spawnpos2-set", Map.of(
                     "x", String.valueOf(loc.getBlockX()),
                     "y", String.valueOf(loc.getBlockY()),
                     "z", String.valueOf(loc.getBlockZ())

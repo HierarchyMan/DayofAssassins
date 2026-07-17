@@ -6,6 +6,10 @@ messages:
   players-only: "&cOnly players can do that."
   reload-ok: "&aDay of Assassins text and settings reloaded."
 
+teleport:
+  # Hunt phase only — blocked warps/homes while outside spawn/arena
+  locked: "&cTeleporting is disabled during the hunt. Stay in spawn or the arena, or fight in the open."
+
 event:
   description:
     - "&c&lDay of Assassins"
@@ -108,7 +112,7 @@ ffa:
   final-countdown-subtitle: "&7Heading to the arena..."
   start-title: "&c&lFIGHT"
   start-subtitle: "&7The final deathmatch has begun"
-  join-message: "&c&lFinale is on! &7Head to the arena — kills still count until the end."
+  join-message: "&c&lFinale is on! &7Head to the arena — only kills &finside the arena&7 count now."
   # Prefer a server-real hint; avoid hard-coded warps that may not exist
   outside-actionbar: "&eFinale is underway — head to the arena!"
 
@@ -142,6 +146,8 @@ admin:
   centerspawn-set: "&aArena center set to your location."
   pos1-set: "&aArena corner 1 set to &f%x% %y% %z%"
   pos2-set: "&aArena corner 2 set to &f%x% %y% %z%"
+  spawnpos1-set: "&aSpawn zone corner 1 set to &f%x% %y% %z%"
+  spawnpos2-set: "&aSpawn zone corner 2 set to &f%x% %y% %z%"
   wand-given: "&aArena wand given. Left-click corner 1, right-click corner 2."
   invalid-time: "&cInvalid time. Use &fyyyy/MM/dd HH:mm:ss &c(UTC) or &f-r 1d2h5m"
   not-player: "&cOnly players can do that."

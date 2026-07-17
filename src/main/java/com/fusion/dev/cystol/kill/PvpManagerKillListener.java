@@ -1,8 +1,12 @@
 package com.fusion.dev.cystol.kill;
 
+import com.fusion.dev.cystol.arena.CuboidBounds;
+import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.event.EventManager;
+import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.fx.EffectService;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -19,11 +23,14 @@ import java.util.logging.Logger;
  * Credits kills using PvPManager when available (combat enemy / damager),
  * without modifying death/kill messages.
  * Falls back to {@link PlayerDeathEvent#getEntity()#getKiller()} if API probe fails.
+ *
+ * <p>FFA: only deaths where both players are inside the arena cuboid count.
  */
 public final class PvpManagerKillListener implements Listener {
 
     private final EventManager eventManager;
     private final KillService killService;
+    private final PluginConfig config;
     private final EffectService effects;
     private final Logger logger;
     private Object pvpManager;
@@ -34,11 +41,13 @@ public final class PvpManagerKillListener implements Listener {
     public PvpManagerKillListener(
             EventManager eventManager,
             KillService killService,
+            PluginConfig config,
             EffectService effects,
             Logger logger
     ) {
         this.eventManager = eventManager;
         this.killService = killService;
+        this.config = config;
         this.effects = effects;
         this.logger = logger;
         hookPvpManager();
@@ -105,7 +114,8 @@ public final class PvpManagerKillListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
         // Do not modify event death message
-        if (!eventManager.killsCountAt(Instant.now())) {
+        Instant now = Instant.now();
+        if (!eventManager.killsCountAt(now)) {
             return;
         }
         Player victim = event.getEntity();
@@ -113,8 +123,27 @@ public final class PvpManagerKillListener implements Listener {
         if (killer == null || killer.getUniqueId().equals(victim.getUniqueId())) {
             return;
         }
+        EventPhase phase = eventManager.phase();
+        if (!KillCreditRules.locationAllowsCredit(
+                phase,
+                isInArena(killer.getLocation()),
+                isInArena(victim.getLocation())
+        )) {
+            return;
+        }
         killService.creditKill(killer.getUniqueId(), killer.getName());
         effects.play(killer, EffectService.EffectKey.KILL_CREDITED, victim.getLocation());
+    }
+
+    private boolean isInArena(Location loc) {
+        if (loc == null || loc.getWorld() == null) {
+            return false;
+        }
+        if (!loc.getWorld().getName().equals(config.arenaWorld())) {
+            return false;
+        }
+        CuboidBounds cuboid = config.arenaCuboid();
+        return cuboid.contains(loc.getX(), loc.getY(), loc.getZ());
     }
 
     private Player resolveKiller(Player victim) {

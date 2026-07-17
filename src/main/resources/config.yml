@@ -51,6 +51,48 @@ arena:
     yaw: 0.0
     pitch: 0.0
 
+# Safe spawn zone for hunt-phase teleport lock (free TP while standing here).
+# Set with /preciv admin set spawnpos1 | spawnpos2 (or edit here). FFA has no TP lock.
+spawn:
+  configured: false
+  world: world
+  pos1:
+    x: 0
+    y: 64
+    z: 0
+  pos2:
+    x: 0
+    y: 64
+    z: 0
+
+# Hunt only: block warps/homes/etc when outside spawn + arena. FFA = unlocked (kills zone-gated).
+teleport-lock:
+  enabled: true
+  commands:
+    - spawn
+    - home
+    - homes
+    - back
+    - rtp
+    - wild
+    - tpa
+    - tpahere
+    - tpaccept
+    - tpyes
+    - tpdeny
+    - tno
+    - warp
+    - warps
+    - top
+    - tp
+    - tpo
+    - tphere
+    - call
+    - bring
+    - espawn
+    - ehome
+    - eback
+
 storage:
   file: data.db
 

@@ -432,6 +432,103 @@ public final class PluginConfig {
         writeValue("tab.bossbar.enabled", enabled);
     }
 
+    // --- Teleport lock (Hunt only) ---
+
+    public boolean teleportLockEnabled() {
+        return cfg().getBoolean("teleport-lock.enabled", true);
+    }
+
+    /**
+     * Lowercase command labels blocked during hunt when outside spawn/arena
+     * (e.g. {@code spawn}, {@code home}). Plugin prefixes are stripped at match time.
+     */
+    public java.util.Set<String> teleportLockCommands() {
+        java.util.List<String> raw = cfg().getStringList("teleport-lock.commands");
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
+        if (raw == null || raw.isEmpty()) {
+            for (String d : DEFAULT_TP_LOCK_COMMANDS) {
+                out.add(d);
+            }
+            return java.util.Collections.unmodifiableSet(out);
+        }
+        for (String s : raw) {
+            if (s == null || s.isBlank()) {
+                continue;
+            }
+            out.add(s.trim().toLowerCase(java.util.Locale.ROOT));
+        }
+        return java.util.Collections.unmodifiableSet(out);
+    }
+
+    private static final String[] DEFAULT_TP_LOCK_COMMANDS = {
+            "spawn", "home", "homes", "back", "rtp", "wild", "tpa", "tpahere",
+            "tpaccept", "tpyes", "tpdeny", "tno", "warp", "warps", "top",
+            "tp", "tpo", "tphere", "call", "bring", "etp", "espawn", "ehome", "eback"
+    };
+
+    public String spawnWorld() {
+        return cfg().getString("spawn.world", "world");
+    }
+
+    /**
+     * False until admins set both corners (or config has non-zero-ish defaults intentionally set).
+     * We treat missing section as unconfigured so only arena is a free zone until spawn is set.
+     */
+    public boolean spawnZoneConfigured() {
+        ConfigurationSection p1 = cfg().getConfigurationSection("spawn.pos1");
+        ConfigurationSection p2 = cfg().getConfigurationSection("spawn.pos2");
+        if (p1 == null || p2 == null) {
+            return false;
+        }
+        // Explicit opt-in flag preferred; fall back to "both corners present"
+        if (cfg().isSet("spawn.configured")) {
+            return cfg().getBoolean("spawn.configured", false);
+        }
+        return true;
+    }
+
+    public CuboidBounds spawnCuboid() {
+        ConfigurationSection p1 = cfg().getConfigurationSection("spawn.pos1");
+        ConfigurationSection p2 = cfg().getConfigurationSection("spawn.pos2");
+        double x1 = p1 != null ? p1.getDouble("x") : 0;
+        double y1 = p1 != null ? p1.getDouble("y") : 64;
+        double z1 = p1 != null ? p1.getDouble("z") : 0;
+        double x2 = p2 != null ? p2.getDouble("x") : 0;
+        double y2 = p2 != null ? p2.getDouble("y") : 64;
+        double z2 = p2 != null ? p2.getDouble("z") : 0;
+        return new CuboidBounds(x1, y1, z1, x2, y2, z2);
+    }
+
+    public void setSpawnWorld(String world) {
+        writeString("spawn.world", world);
+    }
+
+    public void setSpawnPos1(double x, double y, double z) {
+        lock.writeLock().lock();
+        try {
+            config.set("spawn.pos1.x", x);
+            config.set("spawn.pos1.y", y);
+            config.set("spawn.pos1.z", z);
+            config.set("spawn.configured", true);
+            plugin.saveConfig();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    public void setSpawnPos2(double x, double y, double z) {
+        lock.writeLock().lock();
+        try {
+            config.set("spawn.pos2.x", x);
+            config.set("spawn.pos2.y", y);
+            config.set("spawn.pos2.z", z);
+            config.set("spawn.configured", true);
+            plugin.saveConfig();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     public ConfigurationSection effectSection(String path) {
         return cfg().getConfigurationSection(path);
     }
