@@ -35,12 +35,7 @@ public final class EventRepository {
                     if (!rs.next()) {
                         return new StoredEvent(null, null, null, EventPhase.IDLE, false, false, false);
                     }
-                    boolean pausedCol = false;
-                    try {
-                        pausedCol = rs.getInt("paused") == 1;
-                    } catch (SQLException ignored) {
-                        pausedCol = false;
-                    }
+                    // paused column is created/migrated in SqliteAccess.openAndMigrate — always present
                     return new StoredEvent(
                             epoch(rs.getObject("start_epoch")),
                             epoch(rs.getObject("end_epoch")),
@@ -48,7 +43,7 @@ public final class EventRepository {
                             parsePhase(rs.getString("phase")),
                             rs.getInt("ffa_teleported") == 1,
                             rs.getInt("ceremony_done") == 1,
-                            pausedCol
+                            rs.getInt("paused") == 1
                     );
                 }
             }

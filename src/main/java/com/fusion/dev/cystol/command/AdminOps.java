@@ -92,12 +92,12 @@ public final class AdminOps {
         sender.sendMessage(lang.msg("admin.status.start", Map.of(
                 "time", start.map(TimeUtil::formatUtc).orElse("—")
         )));
-        sender.sendMessage(lang.msg("admin.status.end", Map.of(
-                "time", end.map(TimeUtil::formatUtc).orElse("—")
-        )));
         sender.sendMessage(lang.msg("admin.status.ffa", Map.of(
                 "time", ffa.map(TimeUtil::formatUtc).orElse("—"),
                 "source", ffa.isPresent() ? ffaSource : "—"
+        )));
+        sender.sendMessage(lang.msg("admin.status.end", Map.of(
+                "time", end.map(TimeUtil::formatUtc).orElse("—")
         )));
         sender.sendMessage(lang.msg("admin.status.remaining", Map.of(
                 "countdown", TimeUtil.formatCountdown(remainingSecs)

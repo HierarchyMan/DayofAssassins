@@ -78,9 +78,15 @@ public final class EventScheduler {
         firedAnnounceEpochs.clear();
         firedFinalCountdownSeconds.clear();
         announceScheduleKey = null;
-        // Recovery: if already mid-event after restart, ensure online players get compasses
-        EventPhase current = eventManager.refreshPhase(Instant.now());
+        Instant now = Instant.now();
+        EventPhase current = eventManager.refreshPhase(now);
+        // Restart after a finished event: freeze in pause (same as post-ceremony)
+        if (current == EventPhase.ENDED && eventManager.isCeremonyDone()) {
+            eventManager.pause();
+            current = EventPhase.PAUSED;
+        }
         lastPhase = current;
+        // Recovery: if already mid-event after restart, ensure online players get compasses
         if (current == EventPhase.HUNT || current == EventPhase.FFA) {
             compassListener.giveToAllOnline();
         }
@@ -174,12 +180,13 @@ public final class EventScheduler {
     }
 
     /**
-     * Admin force: re-run end ceremony if currently ENDED.
+     * Admin force: re-run end ceremony if the live clock is past end
+     * (works even when already auto-paused after a prior ceremony).
      * @return null on success, otherwise {@code not-ended}
      */
     public String forceCeremony() {
-        EventPhase phase = eventManager.refreshPhase(Instant.now());
-        if (phase != EventPhase.ENDED) {
+        Instant now = Instant.now();
+        if (eventManager.livePhaseAt(now) != EventPhase.ENDED) {
             return "not-ended";
         }
         eventManager.clearCeremonyDone();
@@ -189,8 +196,11 @@ public final class EventScheduler {
 
     private void runCeremonyOnce() {
         ceremonyService.runCeremony();
-        eventManager.markCeremonyDone();
         tabDisplayService.clear();
+        // Single persist: ceremony_done + paused (survives restart without re-firing)
+        eventManager.markCeremonyDoneAndPause();
+        lastPhase = EventPhase.PAUSED;
+        logger.info("End ceremony complete — event paused until host unpauses");
     }
 
     private void onPhaseChange(EventPhase from, EventPhase to, Instant now) {

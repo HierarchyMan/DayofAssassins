@@ -181,7 +181,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             case "set" -> {
                 if (args.length < 2) {
                     sender.sendMessage(Component.text(
-                            "/preciv admin set <starttime|endtime|ffatime|centerspawn|pos1|pos2|spawnpos1|spawnpos2>"
+                            "/preciv admin set <starttime|ffatime|endtime|centerspawn|pos1|pos2|spawnpos1|spawnpos2>"
                     ));
                     return;
                 }

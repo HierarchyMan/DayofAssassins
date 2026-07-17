@@ -40,7 +40,7 @@ public final class PrecivSuggestions {
             "wand"
     );
     private static final List<String> SET = List.of(
-            "starttime", "endtime", "ffatime", "centerspawn", "pos1", "pos2",
+            "starttime", "ffatime", "endtime", "centerspawn", "pos1", "pos2",
             "spawnpos1", "spawnpos2"
     );
     private static final List<String> PHASES = List.of(

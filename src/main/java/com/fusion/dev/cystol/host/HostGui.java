@@ -31,7 +31,7 @@ import java.util.function.Consumer;
 public final class HostGui {
 
     public enum TimeField {
-        START, END, FFA
+        START, FFA, END
     }
 
     private final EventManager eventManager;
@@ -101,8 +101,8 @@ public final class HostGui {
                 Material.CLOCK,
                 lang.raw("host.gui.main.times.name"),
                 List.of(
-                        "&7Schedule start / end / finale times",
-                        "&7for the next event.",
+                        "&7Schedule start → finale → end",
+                        "&7(timeline order).",
                         "&8Edits always pause until you unpause.",
                         "",
                         "&eClick to open"
@@ -113,6 +113,20 @@ public final class HostGui {
                 }
         ));
         gui.setItem(3, 5, navItem(
+                Material.IRON_SWORD,
+                lang.raw("host.gui.main.ffa.name"),
+                List.of(
+                        "&7Finale offset, announces, countdown",
+                        "&8Before end: &f" + formatDuration(config.ffaBeforeEndSeconds()),
+                        "",
+                        "&eClick to open"
+                ),
+                e -> {
+                    clickFx(player);
+                    openFfa(player);
+                }
+        ));
+        gui.setItem(3, 7, navItem(
                 Material.GOLD_INGOT,
                 lang.raw("host.gui.main.rewards.name"),
                 List.of(
@@ -127,21 +141,8 @@ public final class HostGui {
                     openRewards(player);
                 }
         ));
-        gui.setItem(3, 7, navItem(
-                Material.IRON_SWORD,
-                lang.raw("host.gui.main.ffa.name"),
-                List.of(
-                        "&7Finale offset, announces, countdown",
-                        "&8Before end: &f" + formatDuration(config.ffaBeforeEndSeconds()),
-                        "",
-                        "&eClick to open"
-                ),
-                e -> {
-                    clickFx(player);
-                    openFfa(player);
-                }
-        ));
 
+        // Timeline order left → right: hunt → finale → end
         gui.setItem(5, 3, navItem(
                 Material.LIME_DYE,
                 "&aJump to hunt now",
@@ -173,6 +174,21 @@ public final class HostGui {
                 }
         ));
 
+        boolean bar = config.tabBossbarEnabled();
+        gui.setItem(6, 3, navItem(
+                bar ? Material.DRAGON_HEAD : Material.WITHER_SKELETON_SKULL,
+                bar ? "&aEvent bossbar: ON" : "&7Event bossbar: OFF",
+                List.of(
+                        "&8TAB bar for countdown + live event (all stages).",
+                        "",
+                        "&eClick &7to toggle"
+                ),
+                e -> {
+                    config.setTabBossbarEnabled(!config.tabBossbarEnabled());
+                    clickFx(player);
+                    openMain(player);
+                }
+        ));
         gui.setItem(6, 5, navItem(
                 Material.BARRIER,
                 lang.raw("host.gui.common.close"),
@@ -190,18 +206,12 @@ public final class HostGui {
                 .create();
         gui.setDefaultClickAction(e -> e.setCancelled(true));
 
+        // Left → right = timeline order: start → finale → end
         gui.setItem(2, 3, timeItem(
                 Material.LIME_CONCRETE,
                 "&aStart time",
                 TimeField.START,
                 eventManager.start().orElse(null),
-                player
-        ));
-        gui.setItem(2, 5, timeItem(
-                Material.RED_CONCRETE,
-                "&cEnd time",
-                TimeField.END,
-                eventManager.end().orElse(null),
                 player
         ));
         Instant ffaOverride = eventManager.ffaOverride().orElse(null);
@@ -213,9 +223,16 @@ public final class HostGui {
         ffaLore.add("&eLeft-click &7type a time in chat");
         ffaLore.add("&eRight-click &7clear override");
         ffaLore.add("&eShift+left &7set to now");
-        gui.setItem(2, 7, navItem(Material.ORANGE_CONCRETE, "&6Finale time", ffaLore, e -> {
+        gui.setItem(2, 5, navItem(Material.ORANGE_CONCRETE, "&6Finale time", ffaLore, e -> {
             handleTimeClick(player, TimeField.FFA, e.getClick());
         }));
+        gui.setItem(2, 7, timeItem(
+                Material.RED_CONCRETE,
+                "&cEnd time",
+                TimeField.END,
+                eventManager.end().orElse(null),
+                player
+        ));
 
         gui.setItem(4, 5, backItem(player, this::openMain));
         gui.open(player);
@@ -401,22 +418,6 @@ public final class HostGui {
                 }
         ));
 
-        boolean bar = config.tabBossbarEnabled();
-        gui.setItem(5, 7, navItem(
-                bar ? Material.DRAGON_HEAD : Material.WITHER_SKELETON_SKULL,
-                bar ? "&aEvent bossbar: ON" : "&7Event bossbar: OFF",
-                List.of(
-                        "&8TAB bossbar for countdown / live event.",
-                        "",
-                        "&eClick &7to toggle"
-                ),
-                e -> {
-                    config.setTabBossbarEnabled(!config.tabBossbarEnabled());
-                    clickFx(player);
-                    openFfa(player);
-                }
-        ));
-
         gui.setItem(6, 5, backItem(player, this::openMain));
         gui.open(player);
     }
@@ -428,9 +429,9 @@ public final class HostGui {
         List<String> lore = new ArrayList<>();
         lore.add("&8Stage: &f" + phase.name());
         lore.add("&8Start: &f" + eventManager.start().map(TimeUtil::formatUtc).orElse("—"));
-        lore.add("&8End: &f" + eventManager.end().map(TimeUtil::formatUtc).orElse("—"));
         lore.add("&8Finale: &f" + eventManager.ffaMoment().map(TimeUtil::formatUtc).orElse("—")
                 + (eventManager.ffaOverride().isPresent() ? " &8(override)" : " &8(derived)"));
+        lore.add("&8End: &f" + eventManager.end().map(TimeUtil::formatUtc).orElse("—"));
         lore.add("");
         lore.add("&7Open a section below to edit.");
         return navItem(Material.BOOK, lang.raw("host.gui.main.status.name"), lore, e -> {
@@ -496,8 +497,8 @@ public final class HostGui {
     void applyTime(TimeField field, Instant instant) {
         switch (field) {
             case START -> eventManager.setStart(instant);
-            case END -> eventManager.setEnd(instant);
             case FFA -> eventManager.setFfaOverride(instant);
+            case END -> eventManager.setEnd(instant);
         }
     }
 
@@ -588,8 +589,8 @@ public final class HostGui {
     private static String fieldLabel(TimeField f) {
         return switch (f) {
             case START -> "start";
-            case END -> "end";
             case FFA -> "finale";
+            case END -> "end";
         };
     }
 

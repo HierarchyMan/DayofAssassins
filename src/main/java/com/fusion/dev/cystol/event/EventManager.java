@@ -215,6 +215,17 @@ public final class EventManager {
         persist();
     }
 
+    /**
+     * End-of-event freeze: ceremony complete + pause in one SQLite write so a crash
+     * mid-end cannot leave the clock unpaused with ceremony already marked done.
+     */
+    public void markCeremonyDoneAndPause() {
+        ceremonyDone.set(true);
+        paused.set(true);
+        this.phase = EventPhase.PAUSED;
+        persist();
+    }
+
     public void clearFlags() {
         ffaTeleported.set(false);
         ceremonyDone.set(false);

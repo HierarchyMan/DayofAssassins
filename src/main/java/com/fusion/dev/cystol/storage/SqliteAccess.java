@@ -72,8 +72,8 @@ public final class SqliteAccess {
                     )
                     """);
             st.executeUpdate("""
-                    INSERT OR IGNORE INTO event_state (id, phase, ffa_teleported, ceremony_done)
-                    VALUES (1, 'IDLE', 0, 0)
+                    INSERT OR IGNORE INTO event_state (id, phase, ffa_teleported, ceremony_done, paused)
+                    VALUES (1, 'IDLE', 0, 0, 0)
                     """);
         }
         return connection;
