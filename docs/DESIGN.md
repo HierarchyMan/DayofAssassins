@@ -257,7 +257,7 @@ Cuboid is used to:
 
 ### FFA teleport — once
 
-**Who:** online, **unvanished**, **survival** game mode, **without** `preciv.ffa.tp.bypass` (name TBD).
+**Who:** online, **unvanished** (Essentials if present, else metadata `vanished`), **survival** game mode, **without** `preciv.ffa.tp.bypass`.
 
 **What:** one mass teleport onto safe points; no re-TP loop; no cuboid prison.
 
@@ -293,7 +293,7 @@ For players **outside** the cuboid when/after FFA (and still in FFA phase):
 | Kill message edits | **Never** |
 | Cuboid enter/leave kill rules | **Never** |
 | Spectators | **No** |
-| Prize / command hooks | **Not yet** |
+| Prize / command hooks | **Message only** — top-N dense places get claim-staff chat; no economy/crates yet |
 
 ---
 
@@ -325,6 +325,8 @@ Rules:
 
 - **Events persist through restarts** in every phase (countdown, hunt, FFA)  
 - On enable: restore phase, reschedule announce/FFA/end tasks, restore UI  
+- **`ffa_teleported` / `ceremony_done`:** one-shot flags so FFA TP and ceremony do not re-fire every tick or after mid-phase restart  
+- Vanish: Essentials preferred soft-dep; metadata fallback only when Essentials absent
 - Config **read/write protected** (single writer / sync) and **performant** (cache in memory; flush async or batched)  
 - Kill increments: memory + durable write (async queue OK if consistent on crash window is acceptable — prefer safe flush on kill and on disable)
 
@@ -343,6 +345,13 @@ Rules:
 | `/preciv admin set centerspawn` | Ring center |
 | `/preciv admin wand` | Selection wand |
 | `/preciv admin set pos1` / `pos2` | Cuboid corners |
+| `/preciv admin status` | Phase, times, flags, vanish backend, eligible count |
+| `/preciv admin startnow` / `ffanow` / `endnow` | Time-jumps (phase stays clock-derived) |
+| `/preciv admin phase <…>` | Time-jump helper to a named phase |
+| `/preciv admin forcetp` / `forceceremony` / `resetflags` | Re-arm / re-run one-shots |
+| `/preciv admin eligible` | List FFA TP candidates |
+| `/preciv admin clearkills confirm` | Wipe kill table |
+| `/preciv admin reload` | Config + lang + effects (not live event times) |
 
 ### Permissions (draft)
 

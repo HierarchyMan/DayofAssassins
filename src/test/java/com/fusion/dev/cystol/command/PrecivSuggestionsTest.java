@@ -30,6 +30,28 @@ class PrecivSuggestionsTest {
     }
 
     @Test
+    void adminRootListsOpsCommands() {
+        List<String> admin = PrecivSuggestions.complete("admin ", true, true, true, NOW);
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin status")));
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin forcetp")));
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin phase")));
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin set")));
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin clearkills")));
+    }
+
+    @Test
+    void adminPhaseAndClearkillsTokens() {
+        List<String> phases = PrecivSuggestions.complete("admin phase ", true, true, true, NOW);
+        assertTrue(phases.contains("admin phase hunt"));
+        assertTrue(phases.contains("admin phase ffa"));
+        assertEquals(List.of("admin phase hunt"),
+                PrecivSuggestions.complete("admin phase h", true, true, true, NOW));
+
+        assertEquals(List.of("admin clearkills confirm"),
+                PrecivSuggestions.complete("admin clearkills ", true, true, true, NOW));
+    }
+
+    @Test
     void adminSetTargetsAndTimeTokens() {
         List<String> targets = PrecivSuggestions.complete("admin set ", true, true, true, NOW);
         assertEquals(6, targets.size());

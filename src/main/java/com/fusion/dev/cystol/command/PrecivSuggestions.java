@@ -22,9 +22,26 @@ public final class PrecivSuggestions {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private static final List<String> ROOT = List.of("compass", "killtop", "admin");
-    private static final List<String> ADMIN = List.of("set", "wand");
+    private static final List<String> ADMIN = List.of(
+            "status",
+            "startnow",
+            "ffanow",
+            "endnow",
+            "forcetp",
+            "forceceremony",
+            "resetflags",
+            "eligible",
+            "clearkills",
+            "reload",
+            "phase",
+            "set",
+            "wand"
+    );
     private static final List<String> SET = List.of(
             "starttime", "endtime", "ffatime", "centerspawn", "pos1", "pos2"
+    );
+    private static final List<String> PHASES = List.of(
+            "idle", "countdown", "hunt", "ffa", "ended"
     );
     private static final List<String> TIME_SAMPLES = List.of("00:00:00", "12:00:00", "18:00:00");
 
@@ -78,11 +95,27 @@ public final class PrecivSuggestions {
             return withHead(parts, 1, filterPrefix(ADMIN, parts[1]));
         }
 
-        if (!parts[1].equalsIgnoreCase("set")) {
-            // admin wand (and anything else) has no further args
+        String adminSub = parts[1].toLowerCase(Locale.ROOT);
+        if (adminSub.equals("set")) {
+            return completeSet(parts, now);
+        }
+        if (adminSub.equals("phase")) {
+            if (parts.length == 3) {
+                return withHead(parts, 2, filterPrefix(PHASES, parts[2]));
+            }
             return List.of();
         }
+        if (adminSub.equals("clearkills")) {
+            if (parts.length == 3) {
+                return withHead(parts, 2, filterPrefix(List.of("confirm"), parts[2]));
+            }
+            return List.of();
+        }
+        // status / startnow / wand / etc. — no further args
+        return List.of();
+    }
 
+    private static List<String> completeSet(String[] parts, Instant now) {
         // admin set …
         if (parts.length == 3) {
             return withHead(parts, 2, filterPrefix(SET, parts[2]));

@@ -120,6 +120,11 @@ end:
       title: "&7Place &f#%place%"
       subtitle: "&7%kills% kills"
 
+rewards:
+  eligible: "&aCongrats! You scored &f#%place% &7with &c%kills% &7kills and are eligible for a reward. &ePlease contact staff to claim your reward."
+  staff-summary-header: "&eReward-eligible players (place ≤ %max_place%):"
+  staff-summary-entry: "&7#%place% &f%player% &8(%kills% kills)"
+
 admin:
   start-set: "&aStart time set to &f%time% &7(UTC+0)"
   end-set: "&aEnd time set to &f%time% &7(UTC+0)"
@@ -131,6 +136,34 @@ admin:
   wand-given: "&aArena wand given. Left-click pos1, right-click pos2."
   invalid-time: "&cInvalid time. Use yyyy/MM/dd HH:mm:ss (UTC+0)"
   not-player: "&cPlayers only for this action."
+  status:
+    header: "&c&lDay of Assassins &7— status"
+    phase: "&7Phase: &f%phase%"
+    start: "&7Start: &f%time% &8UTC"
+    end: "&7End: &f%time% &8UTC"
+    ffa: "&7FFA: &f%time% &8(%source%)"
+    remaining: "&7Remaining: &f%countdown%"
+    flags: "&7Flags: &fffa_teleported=%ffa_teleported% &7ceremony_done=%ceremony_done%"
+    kills: "&7Kills: &f%rows% &7rows | Top: &f%top_killer% &8(%top_kills%)"
+    arena: "&7Arena: &f%world% &8| &7%cuboid% &8| center &f%center%"
+    vanish: "&7Vanish backend: &f%backend%"
+    eligible: "&7FFA eligible online: &f%count%"
+  startnow-ok: "&aEvent started now (&f%time%&a). Phase: &f%phase%"
+  ffanow-ok: "&aFFA moment set to now (&f%time%&a). Phase: &f%phase%"
+  endnow-ok: "&aEvent ended now. Phase: &f%phase%"
+  forcetp-ok: "&aForced FFA teleport."
+  forcetp-not-ffa: "&cNot in FFA phase. Use &f/preciv admin ffanow &cor wait for the clock."
+  forcetp-in-progress: "&cFFA teleport already in progress."
+  forceceremony-ok: "&aForced end ceremony."
+  forceceremony-not-ended: "&cNot in ENDED phase. Use &f/preciv admin endnow &cfirst."
+  resetflags-ok: "&aCleared ffa_teleported and ceremony_done flags."
+  eligible-header: "&eFFA eligible (&f%count%&e):"
+  eligible-empty: "&7Nobody online matches survival + unvanished + no bypass."
+  eligible-entry: "&7- &f%player%"
+  clearkills-confirm: "&cThis wipes all kill scores. Run &f/preciv admin clearkills confirm &cto proceed."
+  clearkills-ok: "&aAll kill scores cleared."
+  phase-usage: "&cUsage: /preciv admin phase <idle|countdown|hunt|ffa|ended>"
+  phase-ok: "&aSchedule adjusted. Phase: &f%phase%"
 
 wand:
   name: "&6Arena Selection Wand"

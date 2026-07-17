@@ -30,19 +30,22 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
     private final CompassService compassService;
     private final PluginConfig config;
     private final Lang lang;
+    private final AdminOps adminOps;
 
     public PrecivCommand(
             EventManager eventManager,
             KillService killService,
             CompassService compassService,
             PluginConfig config,
-            Lang lang
+            Lang lang,
+            AdminOps adminOps
     ) {
         this.eventManager = eventManager;
         this.killService = killService;
         this.compassService = compassService;
         this.config = config;
         this.lang = lang;
+        this.adminOps = adminOps;
     }
 
     /** Paper Brigadier entry (no Bukkit {@link Command} instance). */
@@ -113,31 +116,58 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             return;
         }
         if (args.length == 0) {
-            sender.sendMessage(Component.text("/preciv admin set <starttime|endtime|ffatime|centerspawn|pos1|pos2> | wand"));
+            adminOps.sendUsage(sender);
             return;
         }
-        if (args[0].equalsIgnoreCase("wand")) {
-            if (!(sender instanceof Player player)) {
-                sender.sendMessage(lang.msg("admin.not-player"));
-                return;
+        String action = args[0].toLowerCase(Locale.ROOT);
+        switch (action) {
+            case "status" -> adminOps.status(sender);
+            case "startnow" -> adminOps.startNow(sender);
+            case "ffanow" -> adminOps.ffaNow(sender);
+            case "endnow" -> adminOps.endNow(sender);
+            case "forcetp" -> adminOps.forceTp(sender);
+            case "forceceremony" -> adminOps.forceCeremony(sender);
+            case "resetflags" -> adminOps.resetFlags(sender);
+            case "eligible" -> adminOps.eligible(sender);
+            case "clearkills" -> {
+                boolean confirm = args.length >= 2 && args[1].equalsIgnoreCase("confirm");
+                adminOps.clearKills(sender, confirm);
             }
-            player.getInventory().addItem(compassService.createWand());
-            player.sendMessage(lang.msg("admin.wand-given"));
-            return;
-        }
-        if (!args[0].equalsIgnoreCase("set") || args.length < 2) {
-            sender.sendMessage(Component.text("/preciv admin set <starttime|endtime|ffatime|centerspawn|pos1|pos2> | wand"));
-            return;
-        }
-        String what = args[1].toLowerCase(Locale.ROOT);
-        switch (what) {
-            case "starttime" -> setTime(sender, args, true);
-            case "endtime" -> setTime(sender, args, false);
-            case "ffatime" -> setFfa(sender, args);
-            case "centerspawn" -> setCenter(sender);
-            case "pos1" -> setPos(sender, true);
-            case "pos2" -> setPos(sender, false);
-            default -> sender.sendMessage(Component.text("Unknown admin set target."));
+            case "reload" -> adminOps.reload(sender);
+            case "phase" -> {
+                if (args.length < 2) {
+                    sender.sendMessage(lang.msg("admin.phase-usage"));
+                } else {
+                    adminOps.setPhase(sender, args[1]);
+                }
+            }
+            case "wand" -> {
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(lang.msg("admin.not-player"));
+                    return;
+                }
+                player.getInventory().addItem(compassService.createWand());
+                player.sendMessage(lang.msg("admin.wand-given"));
+            }
+            case "set" -> {
+                if (args.length < 2) {
+                    sender.sendMessage(Component.text(
+                            "/preciv admin set <starttime|endtime|ffatime|centerspawn|pos1|pos2>"
+                    ));
+                    return;
+                }
+                String what = args[1].toLowerCase(Locale.ROOT);
+                switch (what) {
+                    case "starttime" -> setTime(sender, args, true);
+                    case "endtime" -> setTime(sender, args, false);
+                    case "ffatime" -> setFfa(sender, args);
+                    case "centerspawn" -> setCenter(sender);
+                    case "pos1" -> setPos(sender, true);
+                    case "pos2" -> setPos(sender, false);
+                    default -> sender.sendMessage(Component.text("Unknown admin set target."));
+                }
+            }
+            default -> adminOps.sendUsage(sender);
         }
     }
 

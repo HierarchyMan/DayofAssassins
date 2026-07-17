@@ -82,6 +82,11 @@ public final class EventManager {
         return timeline().ffaMoment();
     }
 
+    /** Absolute FFA override if set (not the derived end − offset moment). */
+    public Optional<Instant> ffaOverride() {
+        return Optional.ofNullable(ffaOverride);
+    }
+
     public void setStart(Instant instant) {
         this.start = instant;
         config.setTimeStart(instant);
@@ -128,6 +133,39 @@ public final class EventManager {
 
     public void markCeremonyDone() {
         ceremonyDone.set(true);
+        persist();
+    }
+
+    /** Clears one-shot FFA/ceremony flags without changing schedule times. */
+    public void clearFlags() {
+        ffaTeleported.set(false);
+        ceremonyDone.set(false);
+        persist();
+    }
+
+    public void clearFfaTeleported() {
+        ffaTeleported.set(false);
+        persist();
+    }
+
+    public void clearCeremonyDone() {
+        ceremonyDone.set(false);
+        persist();
+    }
+
+    /**
+     * Clear start/end/FFA override (IDLE). Flags reset. Writes empty times to config.
+     */
+    public void clearSchedule() {
+        this.start = null;
+        this.end = null;
+        this.ffaOverride = null;
+        config.setTimeStart(null);
+        config.setTimeEnd(null);
+        config.setTimeFfa(null);
+        ceremonyDone.set(false);
+        ffaTeleported.set(false);
+        refreshPhase(Instant.now());
         persist();
     }
 

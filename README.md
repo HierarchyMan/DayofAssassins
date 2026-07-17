@@ -19,6 +19,9 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 | **FFA finale** | One-shot ring/oval spawn in a wand-selected cuboid around center |
 | **Announcements** | Configurable titles before FFA (“final deathmatch begins in…”) |
 | **End ceremony** | Dense shared-place ranking; titles for all; gold/silver/bronze + heroic for top 3 |
+| **Reward eligibility** | Configurable top-N places get a “contact staff to claim” chat message |
+| **Admin ops** | Status, time-jumps (`startnow` / `ffanow` / `endnow` / `phase`), force TP/ceremony, reload |
+| **Vanish** | Essentials/EssentialsX when present; else metadata `vanished` fallback |
 | **SQLite storage** | Event times/phase, kills, metrics — survives restarts mid-event |
 | **Fully configurable text** | All messages, item lore, menu titles in `lang.yml` |
 | **Effects** | Sounds/particles for compass, menus, kills, FFA, end (config toggles) |
@@ -30,7 +33,8 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 - Arena block reset (arena is normal world)  
 - Custom death handling (except compass no-drop + respawn re-give)  
 - Kill chat message edits  
-- Spectators or prize/command hooks (yet)  
+- Spectators  
+- Automatic prize commands / economy / crates (reward is a **claim-with-staff message** only)  
 
 ---
 
@@ -43,7 +47,7 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 3. **FFA lead-up** — Title announcements as the finale approaches.
 4. **Finale** — Eligible players are teleported **once** onto a ring/oval in the PvP arena. The arena is open; you can leave. Kills still count everywhere until the end.
 5. **Outside the cuboid after FFA** — Short action-bar nudge (e.g. where the finale is / warp hint). Configurable.
-6. **End** — Scoring freezes. Everyone online gets a title with **place + kills**. Top 3 get gold/silver/bronze styling and a heroic sound. Offline players keep rank (kills persist).
+6. **End** — Scoring freezes. Everyone online gets a title with **place + kills**. Top 3 get gold/silver/bronze styling and a heroic sound. Top-N (config) also get a **reward eligibility** chat message. Offline players keep rank (kills persist); staff see a summary for claims.
 
 ### For admins (mental model)
 
@@ -53,6 +57,14 @@ Build arena in-world
     → set starttime + endtime (UTC+0)
     → FFA = end − 30 minutes (default, config)
     → plugin runs the rest (announce, TP, scoring, ceremony)
+```
+
+**Dry-run / live ops** without editing the DB:
+
+```text
+/preciv admin status
+/preciv admin startnow | ffanow | endnow
+/preciv admin forcetp | forceceremony | resetflags
 ```
 
 **Win condition:** most event kills when `endtime` hits.  
@@ -68,13 +80,14 @@ Build arena in-world
 | **Java 21** | Matches Paper 1.21 toolchains |
 | **[TAB](https://github.com/NEZNAMY/TAB)** | Hard depend — bossbar + scoreboard API |
 | **[PvPManager](https://github.com/ChanceSD/PvPManager)** | Hard depend — kill credit (combat/killer resolution) |
+| **Essentials / EssentialsX** | Soft depend — preferred vanish backend if present |
 | **Network (first boot)** | Paper downloads `sqlite-jdbc` via the plugin loader (then cached) |
 
 ---
 
 ## Installation
 
-1. Install **Paper 1.21+**, **TAB**, and **PvPManager**.
+1. Install **Paper 1.21+**, **TAB**, and **PvPManager**. EssentialsX is optional (better vanish).
 2. Build or copy `DayOfAssassins-*.jar` into `plugins/`.
 3. Start the server once so configs generate:
    - `plugins/DayOfAssassins/config.yml`
@@ -147,7 +160,7 @@ Optional absolute FFA override:
 
 ### 4. (Optional) Tune config
 
-Edit `config.yml` for announce timing, FFA offset, TAB lines, effects, etc. See [Configuration](#configuration).
+Edit `config.yml` for announce timing, FFA offset, rewards top-N, TAB lines, effects, etc. See [Configuration](#configuration).
 
 ### 5. Tell players
 
@@ -166,13 +179,36 @@ Description text comes from `lang.yml`.
 | `/event` | Everyone | Event description (`lang.yml`) |
 | `/preciv compass` | Players | Give Assassin’s Compass if they don’t already have one |
 | `/preciv killtop` | Everyone | Current kill leaderboard |
-| `/preciv admin wand` | Admin | Arena selection wand |
-| `/preciv admin set pos1` / `pos2` | Admin | Cuboid corners at your feet |
-| `/preciv admin set centerspawn` | Admin | FFA ring center at your location |
-| `/preciv admin set starttime <yyyy/MM/dd HH:mm:ss>` | Admin | Event start (UTC+0) |
-| `/preciv admin set endtime <yyyy/MM/dd HH:mm:ss>` | Admin | Event end (UTC+0) |
-| `/preciv admin set ffatime <…>` / `clear` | Admin | Optional FFA time override |
 | `/doa` | — | Alias of `/preciv` |
+
+### Admin — setup
+
+| Command | Description |
+|---------|-------------|
+| `/preciv admin wand` | Arena selection wand |
+| `/preciv admin set pos1` / `pos2` | Cuboid corners at your feet |
+| `/preciv admin set centerspawn` | FFA ring center at your location |
+| `/preciv admin set starttime <yyyy/MM/dd HH:mm:ss>` | Event start (UTC+0) |
+| `/preciv admin set endtime <yyyy/MM/dd HH:mm:ss>` | Event end (UTC+0) |
+| `/preciv admin set ffatime <…>` / `clear` | Optional FFA time override |
+
+### Admin — ops & controls
+
+Phase is **always derived from the clock**. These commands adjust times and/or one-shot flags so ops can drive the event without hacking SQLite.
+
+| Command | Description |
+|---------|-------------|
+| `/preciv admin status` | Phase, times, flags, top killer, vanish backend, FFA eligible count |
+| `/preciv admin startnow` | Jump into hunt (start ≈ now; ensures end is in the future) |
+| `/preciv admin ffanow` | Jump into FFA (override FFA = now; next tick runs ring TP) |
+| `/preciv admin endnow` | Jump to ended (end = now; ceremony runs if not done) |
+| `/preciv admin phase <idle\|countdown\|hunt\|ffa\|ended>` | Time-jump helper for a target phase |
+| `/preciv admin forcetp` | Re-run FFA mass TP (must already be in FFA) |
+| `/preciv admin forceceremony` | Re-run end ceremony (must already be ENDED) |
+| `/preciv admin resetflags` | Clear `ffa_teleported` + `ceremony_done` only |
+| `/preciv admin eligible` | List online FFA-eligible players (debug vanish/GM/bypass) |
+| `/preciv admin clearkills confirm` | Wipe all kill scores (requires `confirm`) |
+| `/preciv admin reload` | Reload `config.yml` + `lang.yml` + effects (does **not** reload live event times from disk) |
 
 ---
 
@@ -184,7 +220,7 @@ Description text comes from `lang.yml`.
 | `preciv.event` | true | `/event` |
 | `preciv.compass` | true | `/preciv compass` |
 | `preciv.killtop` | true | `/preciv killtop` |
-| `preciv.admin` | op | All admin setup commands |
+| `preciv.admin` | op | All admin setup + ops commands |
 | `preciv.ffa.tp.bypass` | false | Skip FFA mass teleport |
 
 ---
@@ -196,6 +232,8 @@ Description text comes from `lang.yml`.
 | Path | Default idea | Purpose |
 |------|----------------|---------|
 | `times.*` | set by commands | Start / end / optional FFA override (also in SQLite) |
+| `rewards.enabled` | `true` | Send reward-eligibility chat at ceremony |
+| `rewards.max-place` | `3` | Dense-rank places ≤ this get the message (ties share place) |
 | `ffa.before-end-seconds` | `1800` (30m) | FFA moment = end − this (unless override) |
 | `ffa.announce-lead-seconds` | `3600` (60m) | Start FFA titles this long before FFA |
 | `ffa.announce-interval-seconds` | `600` (10m) | Title interval |
@@ -211,7 +249,8 @@ Description text comes from `lang.yml`.
 | `effects.*` | enabled | Sounds/particles per action |
 
 **Scoreboard placeholders:** `%top_killer%`, `%top_kills%`, `%phase%`  
-**Bossbar placeholders (lang):** `%countdown%`, `%top_killer%`
+**Bossbar placeholders (lang):** `%countdown%`, `%top_killer%`  
+**Reward placeholders (lang):** `%place%`, `%kills%`, `%player%`, `%max_place%`
 
 ### `lang.yml` (all player-facing text)
 
@@ -224,6 +263,8 @@ Configure:
 - Killtop format  
 - FFA announce / start / outside action bar  
 - End titles for place 1 / 2 / 3 / other  
+- Reward eligibility + staff summary lines  
+- Admin status / force / confirm messages  
 
 Prefer MiniMessage-free **legacy `&` color codes** as shipped.
 
@@ -238,6 +279,41 @@ Defaults in `config.yml` include FX for:
 - End normal & top-3 heroic  
 
 Toggle globally with `effects.enabled`, or per-effect sound/particle `enabled` flags.
+
+---
+
+## Rewards
+
+At end ceremony, players with dense-rank **place ≤ `rewards.max-place`** (if enabled) receive a chat message such as:
+
+> Congrats! You scored #1 with 17 kills and are eligible for a reward. Please contact staff to claim your reward.
+
+Copy is fully in `lang.yml` (`rewards.eligible`). Online staff with `preciv.admin` get a short eligible list. Full list is also logged to console (includes offline winners by name).
+
+This does **not** run prize commands or touch economy — hand out rewards manually (or add command hooks later).
+
+| `max-place` | Who is eligible |
+|-------------|-----------------|
+| `1` | All place **#1** (including ties) |
+| `2` | Places **#1–#2** |
+| `3` | Places **#1–#3** (default) |
+| `0` | Nobody (even if `enabled: true`) |
+
+---
+
+## Vanish
+
+| Backend | When used |
+|---------|-----------|
+| **Essentials / EssentialsX** | Plugin present and API binds — **only** this source (no metadata OR) |
+| **Metadata `vanished`** | Essentials absent or bind failed — same legacy check as before |
+
+Used for:
+
+- Compass GUI player list  
+- FFA teleport eligibility  
+
+`/preciv admin status` reports the active backend (`essentials` or `metadata`).
 
 ---
 
@@ -259,10 +335,12 @@ Teleported **once** when FFA starts if the player is:
 
 - Online  
 - **Survival** mode  
-- **Not vanished** (metadata `vanished`)  
+- **Not vanished** (Essentials if present, else metadata `vanished`)  
 - **Without** `preciv.ffa.tp.bypass`  
 
 Spawns: circle/oval inside cuboid around centerspawn; multi-ring / random fallback if points would stack under 1 block; diameter capped at 75% of longest cuboid side; standable Y near center Y.
+
+List candidates live: `/preciv admin eligible`.
 
 ---
 
@@ -276,6 +354,17 @@ Spawns: circle/oval inside cuboid around centerspawn; multi-ring / random fallba
 | Metrics | SQLite |
 
 If the server restarts **during** countdown, hunt, or FFA, the plugin reloads phase, reschedules behavior, and re-applies UI. Mid-event online players get compasses again when appropriate.
+
+### Why `ffa_teleported` and `ceremony_done`?
+
+Phase is recalculated from the clock every second. Entering **FFA** or **ENDED** would otherwise re-run side effects every tick (and again after a restart mid-phase):
+
+| Flag | Prevents |
+|------|----------|
+| `ffa_teleported` | Mass ring TP every second / on every mid-FFA restart |
+| `ceremony_done` | Ceremony titles/sounds every second while ended / after restart past end |
+
+Changing start/end/FFA times clears both flags so a new schedule can fire again. Ops can also `/preciv admin resetflags`, `forcetp`, or `forceceremony`.
 
 ---
 
@@ -294,8 +383,11 @@ TAB must be installed and its bossbar/scoreboard features available. This plugin
 | SQLite fails first boot | Allow outbound HTTPS for Paper library download (then cached) |
 | No bossbar | TAB installed? `tab.bossbar.enabled`? Event in countdown/hunt/FFA? |
 | No kills counting | Between start and end? PvPManager resolving killer? |
-| Nobody teleported at FFA | Survival + not vanished + no bypass? Arena world loaded? Centerspawn set? |
+| Nobody teleported at FFA | `/preciv admin eligible` — Survival + not vanished + no bypass? Arena world loaded? Centerspawn set? |
+| Staff got FFA TP’d while vanished | Essentials installed? `/preciv admin status` vanish backend? |
+| Ceremony spam after restart | Should not happen — check `ceremony_done` in status; file a bug if unset |
 | Compass missing after death | Event still active? Inv full? Check action bar hint |
+| Need to re-test FFA/ceremony | `resetflags` + `forcetp` / `forceceremony`, or `ffanow` / `endnow` |
 
 ---
 
@@ -305,15 +397,16 @@ TAB must be installed and its bossbar/scoreboard features available. This plugin
 com.fusion.dev.cystol
 ├── DayOfAssassinsPlugin      # Paper JavaPlugin
 ├── DayOfAssassinsLoader       # MavenLibraryResolver → sqlite-jdbc
-├── command/                  # Brigadier + admin/player commands
+├── command/                  # Brigadier + admin/player commands (AdminOps)
 ├── event/                    # Timeline, scheduler, phases
 ├── compass/                  # Item, GUI (Triumph), listeners
 ├── kill/                     # KillService, dense ranking, PvPManager hook
 ├── arena/                    # Wand, cuboid, FFA spawn math
 ├── display/                  # TAB bossbar + scoreboard render
-├── ceremony/                 # End titles / sounds
+├── ceremony/                 # End titles / sounds / reward eligibility
 ├── fx/                       # Config-driven sounds & particles
 ├── storage/                  # SQLite access + repositories
+├── util/                     # TimeUtil, TextUtil, VanishService
 └── config/                   # PluginConfig + Lang
 ```
 
@@ -330,4 +423,5 @@ Design notes (longer form): [`docs/DESIGN.md`](docs/DESIGN.md).
 
 - Built for **Pre-Civilization** event play.  
 - Depends on community plugins **TAB** (NEZNAMY) and **PvPManager** (ChanceSD).  
+- Soft vanish integration: **EssentialsX** when present.  
 - GUI: Triumph GUI · Storage: SQLite (Xerial) via Paper library loader.

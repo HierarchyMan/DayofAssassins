@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 public final class EventScheduler {
@@ -45,6 +46,7 @@ public final class EventScheduler {
     private EventPhase lastPhase = EventPhase.IDLE;
     private BukkitTask outsideActionbarTask;
     private Component outsideActionbarMessage;
+    private final AtomicBoolean ffaTpInProgress = new AtomicBoolean(false);
 
     public EventScheduler(
             JavaPlugin plugin,
@@ -118,15 +120,48 @@ public final class EventScheduler {
             maybeAnnounceFfa(now);
         }
 
-        if (phase == EventPhase.FFA && !eventManager.isFfaTeleported()) {
+        if (phase == EventPhase.FFA && !eventManager.isFfaTeleported() && !ffaTpInProgress.get()) {
             runFfaTeleport();
         }
 
         if (phase == EventPhase.ENDED && !eventManager.isCeremonyDone()) {
-            ceremonyService.runCeremony();
-            eventManager.markCeremonyDone();
-            tabDisplayService.clear();
+            runCeremonyOnce();
         }
+    }
+
+    /**
+     * Admin force: re-run FFA mass TP if currently in FFA phase.
+     * @return null on success, otherwise a lang-key suffix reason ({@code not-ffa}, {@code in-progress})
+     */
+    public String forceFfaTeleport() {
+        if (eventManager.phase() != EventPhase.FFA) {
+            return "not-ffa";
+        }
+        if (ffaTpInProgress.get()) {
+            return "in-progress";
+        }
+        eventManager.clearFfaTeleported();
+        runFfaTeleport();
+        return null;
+    }
+
+    /**
+     * Admin force: re-run end ceremony if currently ENDED.
+     * @return null on success, otherwise {@code not-ended}
+     */
+    public String forceCeremony() {
+        if (eventManager.phase() != EventPhase.ENDED) {
+            return "not-ended";
+        }
+        eventManager.clearCeremonyDone();
+        runCeremonyOnce();
+        return null;
+    }
+
+    private void runCeremonyOnce() {
+        ceremonyService.runCeremony();
+        eventManager.markCeremonyDone();
+        tabDisplayService.clear();
     }
 
     private void onPhaseChange(EventPhase from, EventPhase to, Instant now) {
@@ -274,6 +309,9 @@ public final class EventScheduler {
     }
 
     private void runFfaTeleport() {
+        if (!ffaTpInProgress.compareAndSet(false, true)) {
+            return;
+        }
         eventManager.markFfaTeleported();
         List<Player> eligible = ffaSpawnService.eligiblePlayers();
         Title title = Title.title(
@@ -290,10 +328,15 @@ public final class EventScheduler {
                     effects.play(p, EffectService.EffectKey.FFA_TELEPORT);
                 },
                 () -> {
+                    ffaTpInProgress.set(false);
                     startOutsideActionbar();
                     logger.info("FFA teleport complete for " + eligible.size() + " players");
                 }
         );
+        // Empty eligible list completes synchronously with onComplete above; still clear if batch was null path
+        if (eligible.isEmpty()) {
+            ffaTpInProgress.set(false);
+        }
     }
 
     private void startOutsideActionbar() {

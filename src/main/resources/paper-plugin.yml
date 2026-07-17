@@ -19,3 +19,8 @@ dependencies:
       load: BEFORE
       required: true
       join-classpath: true
+    # Soft: preferred vanish backend. Plugin still works without it (metadata fallback).
+    Essentials:
+      load: BEFORE
+      required: false
+      join-classpath: false

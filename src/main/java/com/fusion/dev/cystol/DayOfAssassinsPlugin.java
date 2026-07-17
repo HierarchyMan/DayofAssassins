@@ -3,6 +3,7 @@ package com.fusion.dev.cystol;
 import com.fusion.dev.cystol.arena.ArenaWandListener;
 import com.fusion.dev.cystol.arena.FfaSpawnService;
 import com.fusion.dev.cystol.ceremony.EndCeremonyService;
+import com.fusion.dev.cystol.command.AdminOps;
 import com.fusion.dev.cystol.command.EventCommand;
 import com.fusion.dev.cystol.command.PaperCommandRegistrar;
 import com.fusion.dev.cystol.command.PrecivCommand;
@@ -22,6 +23,7 @@ import com.fusion.dev.cystol.kill.PvpManagerKillListener;
 import com.fusion.dev.cystol.storage.EventRepository;
 import com.fusion.dev.cystol.storage.KillRepository;
 import com.fusion.dev.cystol.storage.SqliteDatabase;
+import com.fusion.dev.cystol.util.VanishService;
 import org.bukkit.Bukkit;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
@@ -57,6 +59,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
     private EventScheduler eventScheduler;
     private TabDisplayService tabDisplayService;
     private CompassService compassService;
+    private VanishService vanishService;
 
     private PluginConfig config;
     private Lang lang;
@@ -103,13 +106,18 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         killService = new KillService(killRepository, getLogger());
         killService.load();
 
+        vanishService = new VanishService(getLogger());
+        vanishService.register(this);
+
         EffectService effects = new EffectService(config, getLogger());
         CompassKeys keys = new CompassKeys(this);
         compassService = new CompassService(config, lang, keys);
-        CompassGui compassGui = new CompassGui(compassService, killService, lang, effects);
+        CompassGui compassGui = new CompassGui(compassService, killService, lang, effects, vanishService);
 
-        FfaSpawnService ffaSpawnService = new FfaSpawnService(config, getLogger());
-        EndCeremonyService ceremonyService = new EndCeremonyService(killService, lang, effects, getLogger());
+        FfaSpawnService ffaSpawnService = new FfaSpawnService(config, vanishService, getLogger());
+        EndCeremonyService ceremonyService = new EndCeremonyService(
+                killService, config, lang, effects, getLogger()
+        );
 
         tabDisplayService = new TabDisplayService(eventManager, killService, config, lang, getLogger());
         tabDisplayService.init();
@@ -136,8 +144,15 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
             }
         }, 20L, 20L);
 
+        AdminOps adminOps = new AdminOps(
+                eventManager, eventScheduler, killService, ffaSpawnService,
+                config, lang, effects, vanishService
+        );
+
         eventCommand = new EventCommand(lang);
-        precivCommand = new PrecivCommand(eventManager, killService, compassService, config, lang);
+        precivCommand = new PrecivCommand(
+                eventManager, killService, compassService, config, lang, adminOps
+        );
 
         eventScheduler.start();
         try {
@@ -147,7 +162,8 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
             getLogger().log(Level.WARNING, "Metric write failed", e);
         }
 
-        getLogger().info("Day of Assassins enabled (Paper plugin). Phase=" + eventManager.phase());
+        getLogger().info("Day of Assassins enabled (Paper plugin). Phase=" + eventManager.phase()
+                + " vanish=" + vanishService.backendLabel());
     }
 
     @Override

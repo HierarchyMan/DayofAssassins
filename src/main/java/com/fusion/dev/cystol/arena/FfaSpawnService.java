@@ -1,6 +1,7 @@
 package com.fusion.dev.cystol.arena;
 
 import com.fusion.dev.cystol.config.PluginConfig;
+import com.fusion.dev.cystol.util.VanishService;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Location;
@@ -23,10 +24,12 @@ public final class FfaSpawnService {
     public static final int DEFAULT_BATCH_SIZE = 10;
 
     private final PluginConfig config;
+    private final VanishService vanishService;
     private final Logger logger;
 
-    public FfaSpawnService(PluginConfig config, Logger logger) {
+    public FfaSpawnService(PluginConfig config, VanishService vanishService, Logger logger) {
         this.config = config;
+        this.vanishService = vanishService;
         this.logger = logger;
     }
 
@@ -39,8 +42,7 @@ public final class FfaSpawnService {
             if (p.hasPermission("preciv.ffa.tp.bypass")) {
                 continue;
             }
-            if (p.hasMetadata("vanished") && !p.getMetadata("vanished").isEmpty()
-                    && p.getMetadata("vanished").getFirst().asBoolean()) {
+            if (vanishService.isVanished(p)) {
                 continue;
             }
             list.add(p);

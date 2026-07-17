@@ -1,6 +1,7 @@
 package com.fusion.dev.cystol.ceremony;
 
 import com.fusion.dev.cystol.config.Lang;
+import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.fx.EffectService;
 import com.fusion.dev.cystol.kill.DenseRanking;
 import com.fusion.dev.cystol.kill.KillService;
@@ -18,12 +19,20 @@ import java.util.logging.Logger;
 public final class EndCeremonyService {
 
     private final KillService killService;
+    private final PluginConfig config;
     private final Lang lang;
     private final EffectService effects;
     private final Logger logger;
 
-    public EndCeremonyService(KillService killService, Lang lang, EffectService effects, Logger logger) {
+    public EndCeremonyService(
+            KillService killService,
+            PluginConfig config,
+            Lang lang,
+            EffectService effects,
+            Logger logger
+    ) {
         this.killService = killService;
+        this.config = config;
         this.lang = lang;
         this.effects = effects;
         this.logger = logger;
@@ -59,6 +68,8 @@ public final class EndCeremonyService {
             }
             showPlace(player, place, kills);
         }
+
+        deliverRewards(ranking);
     }
 
     private void showPlace(Player player, int place, int kills) {
@@ -83,6 +94,71 @@ public final class EndCeremonyService {
             effects.play(player, EffectService.EffectKey.END_TOP3);
         } else {
             effects.play(player, EffectService.EffectKey.END_NORMAL);
+        }
+    }
+
+    private void deliverRewards(List<DenseRanking.Entry> ranking) {
+        if (!config.rewardsEnabled()) {
+            return;
+        }
+        int maxRewardPlace = config.rewardsMaxPlace();
+        if (maxRewardPlace <= 0) {
+            return;
+        }
+        List<DenseRanking.Entry> eligible = RewardEligibility.eligible(ranking, maxRewardPlace);
+        if (eligible.isEmpty()) {
+            logger.info("Rewards enabled but no players with place <= " + maxRewardPlace);
+            return;
+        }
+
+        String maxPlaceStr = String.valueOf(maxRewardPlace);
+        StringBuilder audit = new StringBuilder("Reward-eligible (place <= ")
+                .append(maxRewardPlace).append("): ");
+        for (int i = 0; i < eligible.size(); i++) {
+            DenseRanking.Entry e = eligible.get(i);
+            if (i > 0) {
+                audit.append(", ");
+            }
+            audit.append('#').append(e.place()).append(' ')
+                    .append(e.name() == null ? "?" : e.name())
+                    .append(" (").append(e.kills()).append(" kills)");
+        }
+        logger.info(audit.toString());
+
+        Map<UUID, DenseRanking.Entry> eligibleById = new HashMap<>(eligible.size() * 2);
+        for (DenseRanking.Entry e : eligible) {
+            eligibleById.put(e.uuid(), e);
+        }
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            DenseRanking.Entry entry = eligibleById.get(player.getUniqueId());
+            if (entry == null) {
+                continue;
+            }
+            Map<String, String> ph = Map.of(
+                    "place", String.valueOf(entry.place()),
+                    "kills", String.valueOf(entry.kills()),
+                    "player", player.getName(),
+                    "max_place", maxPlaceStr
+            );
+            player.sendMessage(lang.msg("rewards.eligible", ph));
+        }
+
+        // Staff summary (online with admin perm) for claim workflow — includes offline winners by name.
+        Map<String, String> headerPh = Map.of("max_place", maxPlaceStr);
+        for (Player staff : Bukkit.getOnlinePlayers()) {
+            if (!staff.hasPermission("preciv.admin")) {
+                continue;
+            }
+            staff.sendMessage(lang.msg("rewards.staff-summary-header", headerPh));
+            for (DenseRanking.Entry e : eligible) {
+                staff.sendMessage(lang.msg("rewards.staff-summary-entry", Map.of(
+                        "place", String.valueOf(e.place()),
+                        "kills", String.valueOf(e.kills()),
+                        "player", e.name() == null ? "?" : e.name(),
+                        "max_place", maxPlaceStr
+                )));
+            }
         }
     }
 }

@@ -4,6 +4,7 @@ import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.fx.EffectService;
 import com.fusion.dev.cystol.kill.KillService;
 import com.fusion.dev.cystol.util.TextUtil;
+import com.fusion.dev.cystol.util.VanishService;
 import dev.triumphteam.gui.builder.item.ItemBuilder;
 import dev.triumphteam.gui.guis.Gui;
 import dev.triumphteam.gui.guis.GuiItem;
@@ -28,14 +29,22 @@ public final class CompassGui {
     private final KillService killService;
     private final Lang lang;
     private final EffectService effects;
+    private final VanishService vanishService;
     /** Base player-head with skin ownership only — name/lore applied per open. */
     private final ConcurrentHashMap<UUID, ItemStack> headBaseCache = new ConcurrentHashMap<>();
 
-    public CompassGui(CompassService compassService, KillService killService, Lang lang, EffectService effects) {
+    public CompassGui(
+            CompassService compassService,
+            KillService killService,
+            Lang lang,
+            EffectService effects,
+            VanishService vanishService
+    ) {
         this.compassService = compassService;
         this.killService = killService;
         this.lang = lang;
         this.effects = effects;
+        this.vanishService = vanishService;
     }
 
     public void open(Player viewer) {
@@ -53,8 +62,7 @@ public final class CompassGui {
             if (p.getUniqueId().equals(viewer.getUniqueId())) {
                 continue;
             }
-            if (p.hasMetadata("vanished") && !p.getMetadata("vanished").isEmpty()
-                    && p.getMetadata("vanished").getFirst().asBoolean()) {
+            if (vanishService.isVanished(p)) {
                 continue;
             }
             players.add(p);

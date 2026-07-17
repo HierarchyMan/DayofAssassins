@@ -3,6 +3,12 @@ times:
   end: ""
   ffa: ""
 
+# End-ceremony reward eligibility (chat message only — staff hand out real prizes)
+rewards:
+  enabled: true
+  # Dense-rank place must be <= this (1 = #1 only; 3 = places 1–3 including ties)
+  max-place: 3
+
 ffa:
   before-end-seconds: 1800
   announce-lead-seconds: 3600

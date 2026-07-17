@@ -134,6 +134,19 @@ public final class PluginConfig {
         return cfg().getString("storage.file", "data.db");
     }
 
+    /** Ceremony reward chat messages for top dense-rank places. */
+    public boolean rewardsEnabled() {
+        return cfg().getBoolean("rewards.enabled", true);
+    }
+
+    /**
+     * Highest dense-rank place that receives a reward message (1 = place 1 only; 3 = places 1–3).
+     * Ties share place. {@code 0} disables eligibility even if enabled is true.
+     */
+    public int rewardsMaxPlace() {
+        return Math.max(0, cfg().getInt("rewards.max-place", 3));
+    }
+
     public String arenaWorld() {
         return cfg().getString("arena.world", "world");
     }
