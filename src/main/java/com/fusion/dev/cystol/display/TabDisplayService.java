@@ -55,6 +55,10 @@ public final class TabDisplayService {
     private String lastBossTitle;
     private float lastBossProgress = Float.NaN;
     private String lastScoreboardFingerprint;
+    /** Throttle "bossbar missing" log — never spam once per second. */
+    private long lastBossMissingLogMs;
+    /** Online player count last time we scanned for bossbar viewers (join/leave delta). */
+    private int lastBossViewerScanSize = -1;
 
     /**
      * Original line text restored on clear: scoreboard name → (line index → original text).
@@ -144,6 +148,11 @@ public final class TabDisplayService {
         }
         ensureBossBar(api);
         if (bossBar == null) {
+            long nowMs = System.currentTimeMillis();
+            if (nowMs - lastBossMissingLogMs > 60_000L) {
+                lastBossMissingLogMs = nowMs;
+                logger.warning("Event bossbar missing after ensure (is TAB bossbar feature enabled?)");
+            }
             return;
         }
         try {
@@ -158,29 +167,39 @@ public final class TabDisplayService {
                 bossBar.setProgress(progressPercent);
                 lastBossProgress = progressPercent;
             }
-            // Always add — TAB API bars are announcement-style and can be stripped when other
-            // config bars refresh; addPlayer is a no-op if already present. This stacks with
-            // any pre-existing TAB bossbars instead of replacing them.
-            BossBarManager bbm = api.getBossBarManager();
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                TabPlayer tp = api.getPlayer(p.getUniqueId());
-                if (tp == null) {
-                    continue;
-                }
-                if (bbm != null && !bbm.hasBossBarVisible(tp)) {
-                    // Player toggled bossbars off — respect that; still try add in case they re-enable next tick.
-                    continue;
-                }
-                if (!bossBar.containsPlayer(tp)) {
-                    bossBar.addPlayer(tp);
+            // Only walk online players when count changes or bar has no viewers (cheap join path).
+            // Full re-scan if empty so TAB strip/recover still works without O(n) every second
+            // when everyone is already on the bar.
+            int online = Bukkit.getOnlinePlayers().size();
+            int viewers;
+            try {
+                viewers = bossBar.getPlayers().size();
+            } catch (Throwable t) {
+                viewers = -1;
+            }
+            boolean needScan = viewers == 0 || viewers != online || online != lastBossViewerScanSize;
+            if (needScan) {
+                lastBossViewerScanSize = online;
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    TabPlayer tp = api.getPlayer(p.getUniqueId());
+                    if (tp == null) {
+                        continue;
+                    }
+                    try {
+                        if (!bossBar.containsPlayer(tp)) {
+                            bossBar.addPlayer(tp);
+                        }
+                    } catch (Throwable addEx) {
+                        logger.log(Level.FINE, "bossbar addPlayer failed for " + p.getName(), addEx);
+                    }
                 }
             }
         } catch (Throwable t) {
-            logger.log(Level.FINE, "bossbar update failed", t);
-            // Drop stale reference so next tick recreates.
+            logger.log(Level.WARNING, "bossbar update failed — recreating", t);
             bossBar = null;
             lastBossTitle = null;
             lastBossProgress = Float.NaN;
+            lastBossViewerScanSize = -1;
         }
     }
 
@@ -223,8 +242,31 @@ public final class TabDisplayService {
         String fingerprint = scoreboardFingerprint(phase, topRanking, injections);
         boolean contentChanged = !fingerprint.equals(lastScoreboardFingerprint);
 
-        // Boards to touch: every registered scoreboard, plus each online player's active board
-        // (covers edge cases / ensures late-created boards get injects).
+        // Fast path: text unchanged — only inject boards we have never touched (new join / board switch).
+        if (!contentChanged && !savedScoreboardLines.isEmpty()) {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                TabPlayer tp = api.getPlayer(p.getUniqueId());
+                if (tp == null) {
+                    continue;
+                }
+                try {
+                    Scoreboard activeSb = sbm.getActiveScoreboard(tp);
+                    if (activeSb == null) {
+                        continue;
+                    }
+                    String name = activeSb.getName();
+                    String key = name == null ? ("active:" + p.getUniqueId()) : name;
+                    if (!savedScoreboardLines.containsKey(key)) {
+                        injectLines(key, activeSb, injections);
+                    }
+                } catch (Throwable ignored) {
+                    // mid-load
+                }
+            }
+            return;
+        }
+
+        // Content changed (or first inject ever): full registered + active board pass.
         Map<String, Scoreboard> targets = new HashMap<>();
         try {
             Map<String, Scoreboard> registered = sbm.getRegisteredScoreboards();
@@ -255,7 +297,6 @@ public final class TabDisplayService {
         }
 
         for (Map.Entry<String, Scoreboard> e : targets.entrySet()) {
-            // Always inject for boards we have not snapshotted yet; otherwise only on content change.
             boolean firstTouch = !savedScoreboardLines.containsKey(e.getKey());
             if (contentChanged || firstTouch) {
                 injectLines(e.getKey(), e.getValue(), injections);
@@ -377,32 +418,67 @@ public final class TabDisplayService {
     }
 
     public void clear() {
-        boolean hadWork = active || bossBar != null || !savedScoreboardLines.isEmpty();
+        // Cheap no-op when already idle — tick must not pay restore/hide cost every second.
+        if (!active && savedScoreboardLines.isEmpty()) {
+            boolean barHasViewers = false;
+            if (bossBar != null) {
+                try {
+                    barHasViewers = !bossBar.getPlayers().isEmpty();
+                } catch (Throwable ignored) {
+                    barHasViewers = false;
+                }
+            }
+            if (!barHasViewers) {
+                return;
+            }
+        }
         active = false;
         lastBossTitle = null;
         lastBossProgress = Float.NaN;
         lastScoreboardFingerprint = null;
-        if (!available || !hadWork) {
+        lastBossViewerScanSize = -1;
+        if (!available) {
             savedScoreboardLines.clear();
             return;
         }
 
         try {
             TabAPI api = TabAPI.getInstance();
-            if (bossBar != null) {
-                try {
-                    for (TabPlayer tp : new ArrayList<>(bossBar.getPlayers())) {
-                        bossBar.removePlayer(tp);
-                    }
-                } catch (Throwable t) {
-                    logger.log(Level.FINE, "bossbar clear failed", t);
-                }
-            }
+            hideBossBarFromEveryone();
             restoreScoreboardLines(api);
         } catch (Throwable t) {
             logger.log(Level.FINE, "TAB clear failed", t);
             savedScoreboardLines.clear();
         }
+    }
+
+    /** Pull the event bar from all viewers without destroying the TAB registration. */
+    private void hideBossBarFromEveryone() {
+        if (bossBar == null) {
+            return;
+        }
+        try {
+            for (TabPlayer tp : new ArrayList<>(bossBar.getPlayers())) {
+                try {
+                    bossBar.removePlayer(tp);
+                } catch (Throwable ignored) {
+                    // continue others
+                }
+            }
+        } catch (Throwable t) {
+            logger.log(Level.FINE, "bossbar hide failed", t);
+        }
+    }
+
+    /**
+     * Force an immediate UI push (e.g. right after unpause). Safe if not in a display phase —
+     * callers should only invoke when the event is live.
+     */
+    public void forceRefresh(Instant now) {
+        if (now == null) {
+            now = Instant.now();
+        }
+        update(now);
     }
 
     private void restoreScoreboardLines(TabAPI api) {

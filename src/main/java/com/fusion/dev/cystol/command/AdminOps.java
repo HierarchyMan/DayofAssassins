@@ -136,6 +136,7 @@ public final class AdminOps {
         );
         // Force jumps go live immediately (unlike host schedule edits which pause).
         eventManager.applyScheduleAndUnpause(times, now);
+        eventScheduler.refreshDisplayNow();
         sender.sendMessage(lang.msg("admin.startnow-ok", Map.of(
                 "phase", eventManager.phase().name(),
                 "time", TimeUtil.formatUtc(times.start())
@@ -151,6 +152,7 @@ public final class AdminOps {
                 config.ffaBeforeEndSeconds()
         );
         eventManager.applyScheduleAndUnpause(times, now);
+        eventScheduler.refreshDisplayNow();
         sender.sendMessage(lang.msg("admin.ffanow-ok", Map.of(
                 "phase", eventManager.phase().name(),
                 "time", TimeUtil.formatUtc(now)
@@ -161,6 +163,7 @@ public final class AdminOps {
         Instant now = Instant.now();
         ScheduleJumps.Times times = ScheduleJumps.endNow(now, eventManager.start().orElse(null));
         eventManager.applyScheduleAndUnpause(times, now);
+        eventScheduler.refreshDisplayNow();
         sender.sendMessage(lang.msg("admin.endnow-ok", Map.of(
                 "phase", eventManager.phase().name()
         )));
@@ -168,11 +171,14 @@ public final class AdminOps {
 
     public void pause(CommandSender sender) {
         eventManager.pause();
+        eventScheduler.refreshDisplayNow();
         sender.sendMessage(lang.msg("admin.paused-ok"));
     }
 
     public void unpause(CommandSender sender) {
         EventPhase p = eventManager.unpause(Instant.now());
+        // Bossbar/scoreboard must come back immediately — do not wait for the next 1s tick.
+        eventScheduler.refreshDisplayNow();
         sender.sendMessage(lang.msg("admin.unpaused-ok", Map.of("phase", p.name())));
     }
 

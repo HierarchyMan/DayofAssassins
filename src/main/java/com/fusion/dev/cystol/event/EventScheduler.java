@@ -118,17 +118,15 @@ public final class EventScheduler {
             eventManager.persist();
         }
 
-        // Frozen schedule: no UI, announces, FFA TP, ceremony, or 1s progression work
+        // Frozen schedule: no announces, FFA TP, ceremony. UI already cleared on enter PAUSED.
         if (phase == EventPhase.PAUSED || eventManager.isPaused()) {
-            tabDisplayService.clear();
             return;
         }
 
         if (phase == EventPhase.COUNTDOWN || phase == EventPhase.HUNT || phase == EventPhase.FFA) {
             tabDisplayService.update(now);
-        } else {
-            tabDisplayService.clear();
         }
+        // clear only on phase leave (onPhaseChange) — not every idle second
 
         if (phase == EventPhase.HUNT || phase == EventPhase.COUNTDOWN) {
             maybeFinalCountdown(now);
@@ -144,6 +142,17 @@ public final class EventScheduler {
 
         if (phase == EventPhase.ENDED && !eventManager.isCeremonyDone()) {
             runCeremonyOnce();
+        }
+    }
+
+    /** Immediate bossbar/scoreboard push after unpause or schedule force-jump. */
+    public void refreshDisplayNow() {
+        Instant now = Instant.now();
+        EventPhase phase = eventManager.refreshPhase(now);
+        if (phase == EventPhase.COUNTDOWN || phase == EventPhase.HUNT || phase == EventPhase.FFA) {
+            tabDisplayService.forceRefresh(now);
+        } else {
+            tabDisplayService.clear();
         }
     }
 
@@ -197,10 +206,18 @@ public final class EventScheduler {
             compassListener.stripAllOnlineSilent();
         }
         // Hunt kickoff toast (not on recovery into already-running FFA)
-        if (to == EventPhase.HUNT && from != EventPhase.HUNT) {
+        if (to == EventPhase.HUNT && from != EventPhase.HUNT && from != EventPhase.PAUSED) {
             broadcastHuntStart();
         }
-        if (to == EventPhase.COUNTDOWN || to == EventPhase.IDLE) {
+        // Entering live display phases — push bossbar/scoreboard immediately (esp. unpause)
+        if (to == EventPhase.COUNTDOWN || to == EventPhase.HUNT || to == EventPhase.FFA) {
+            tabDisplayService.forceRefresh(now);
+        }
+        // Leaving live display — clear once (do not clear every paused tick)
+        if (to == EventPhase.PAUSED || to == EventPhase.IDLE || to == EventPhase.ENDED) {
+            tabDisplayService.clear();
+        }
+        if (to == EventPhase.COUNTDOWN || to == EventPhase.IDLE || to == EventPhase.PAUSED) {
             firedAnnounceEpochs.clear();
             firedFinalCountdownSeconds.clear();
             announceScheduleKey = null;

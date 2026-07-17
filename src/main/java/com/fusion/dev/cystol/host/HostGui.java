@@ -4,6 +4,7 @@ import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
+import com.fusion.dev.cystol.event.EventScheduler;
 import com.fusion.dev.cystol.fx.EffectService;
 import com.fusion.dev.cystol.util.GuiItems;
 import com.fusion.dev.cystol.util.TextUtil;
@@ -34,6 +35,7 @@ public final class HostGui {
     }
 
     private final EventManager eventManager;
+    private final EventScheduler eventScheduler;
     private final PluginConfig config;
     private final Lang lang;
     private final EffectService effects;
@@ -41,12 +43,14 @@ public final class HostGui {
 
     public HostGui(
             EventManager eventManager,
+            EventScheduler eventScheduler,
             PluginConfig config,
             Lang lang,
             EffectService effects,
             HostChatSession chatSession
     ) {
         this.eventManager = eventManager;
+        this.eventScheduler = eventScheduler;
         this.config = config;
         this.lang = lang;
         this.effects = effects;
@@ -77,9 +81,15 @@ public final class HostGui {
                 e -> {
                     if (eventManager.isPaused()) {
                         EventPhase p = eventManager.unpause(Instant.now());
+                        if (eventScheduler != null) {
+                            eventScheduler.refreshDisplayNow();
+                        }
                         player.sendMessage(lang.msg("admin.unpaused-ok", Map.of("phase", p.name())));
                     } else {
                         eventManager.pause();
+                        if (eventScheduler != null) {
+                            eventScheduler.refreshDisplayNow();
+                        }
                         player.sendMessage(lang.msg("admin.paused-ok"));
                     }
                     clickFx(player);

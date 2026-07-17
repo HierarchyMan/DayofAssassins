@@ -152,7 +152,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         );
 
         HostChatSession hostChat = new HostChatSession(this, lang);
-        HostGui hostGui = new HostGui(eventManager, config, lang, effects, hostChat);
+        HostGui hostGui = new HostGui(eventManager, eventScheduler, config, lang, effects, hostChat);
         hostChat.bindGui(hostGui);
         getServer().getPluginManager().registerEvents(hostChat, this);
 
