@@ -35,6 +35,11 @@ public final class SqliteAccess {
         String url = "jdbc:sqlite:" + dbFile.getAbsolutePath();
         Connection connection = DriverManager.getConnection(url);
         try (Statement st = connection.createStatement()) {
+            // Latency-friendly defaults for event writes (async kill flush + rare phase saves).
+            st.execute("PRAGMA journal_mode=WAL");
+            st.execute("PRAGMA synchronous=NORMAL");
+            st.execute("PRAGMA busy_timeout=5000");
+            st.execute("PRAGMA foreign_keys=ON");
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS event_state (
                       id INTEGER PRIMARY KEY CHECK (id = 1),

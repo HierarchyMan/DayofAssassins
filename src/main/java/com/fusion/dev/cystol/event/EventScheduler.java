@@ -9,6 +9,7 @@ import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.display.TabDisplayService;
 import com.fusion.dev.cystol.fx.EffectService;
 import com.fusion.dev.cystol.util.TimeUtil;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -38,8 +39,10 @@ public final class EventScheduler {
 
     private BukkitTask tickTask;
     private final Set<Long> firedAnnounceEpochs = new HashSet<>();
+    private Long announceScheduleKey;
     private EventPhase lastPhase = EventPhase.IDLE;
     private BukkitTask outsideActionbarTask;
+    private Component outsideActionbarMessage;
 
     public EventScheduler(
             JavaPlugin plugin,
@@ -67,6 +70,8 @@ public final class EventScheduler {
 
     public void start() {
         stop();
+        firedAnnounceEpochs.clear();
+        announceScheduleKey = null;
         // Recovery: if already mid-event after restart, ensure online players get compasses
         EventPhase current = eventManager.refreshPhase(Instant.now());
         lastPhase = current;
@@ -85,6 +90,7 @@ public final class EventScheduler {
             outsideActionbarTask.cancel();
             outsideActionbarTask = null;
         }
+        outsideActionbarMessage = null;
     }
 
     private void tick() {
@@ -126,6 +132,10 @@ public final class EventScheduler {
                 && from != EventPhase.HUNT && from != EventPhase.FFA) {
             compassListener.giveToAllOnline();
         }
+        if (to == EventPhase.COUNTDOWN || to == EventPhase.IDLE) {
+            firedAnnounceEpochs.clear();
+            announceScheduleKey = null;
+        }
     }
 
     private void maybeAnnounceFfa(Instant now) {
@@ -134,6 +144,11 @@ public final class EventScheduler {
             return;
         }
         Instant ffa = ffaOpt.get();
+        long ffaEpoch = ffa.getEpochSecond();
+        if (announceScheduleKey == null || announceScheduleKey != ffaEpoch) {
+            firedAnnounceEpochs.clear();
+            announceScheduleKey = ffaEpoch;
+        }
         if (!now.isBefore(ffa)) {
             return;
         }
@@ -168,18 +183,24 @@ public final class EventScheduler {
     private void runFfaTeleport() {
         eventManager.markFfaTeleported();
         List<Player> eligible = ffaSpawnService.eligiblePlayers();
-        ffaSpawnService.teleportPlayers(eligible);
         Title title = Title.title(
                 lang.msg("ffa.start-title"),
                 lang.msg("ffa.start-subtitle"),
                 Title.Times.times(Duration.ofMillis(250), Duration.ofSeconds(3), Duration.ofMillis(500))
         );
-        for (Player p : eligible) {
-            p.showTitle(title);
-            effects.play(p, EffectService.EffectKey.FFA_TELEPORT);
-        }
-        startOutsideActionbar();
-        logger.info("FFA teleport complete for " + eligible.size() + " players");
+        ffaSpawnService.teleportPlayersBatched(
+                plugin,
+                eligible,
+                FfaSpawnService.DEFAULT_BATCH_SIZE,
+                p -> {
+                    p.showTitle(title);
+                    effects.play(p, EffectService.EffectKey.FFA_TELEPORT);
+                },
+                () -> {
+                    startOutsideActionbar();
+                    logger.info("FFA teleport complete for " + eligible.size() + " players");
+                }
+        );
     }
 
     private void startOutsideActionbar() {
@@ -190,18 +211,25 @@ public final class EventScheduler {
         final int[] left = {seconds};
         CuboidBounds cuboid = config.arenaCuboid();
         String worldName = config.arenaWorld();
+        // Build message once for the nudge window.
+        outsideActionbarMessage = lang.msg("ffa.outside-actionbar");
         outsideActionbarTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (left[0]-- <= 0 || eventManager.phase() != EventPhase.FFA) {
                 if (outsideActionbarTask != null) {
                     outsideActionbarTask.cancel();
                     outsideActionbarTask = null;
                 }
+                outsideActionbarMessage = null;
+                return;
+            }
+            Component msg = outsideActionbarMessage;
+            if (msg == null) {
                 return;
             }
             for (Player p : Bukkit.getOnlinePlayers()) {
                 if (p.getWorld() == null || !p.getWorld().getName().equals(worldName)
                         || !cuboid.contains(p.getLocation().getX(), p.getLocation().getY(), p.getLocation().getZ())) {
-                    p.sendActionBar(lang.msg("ffa.outside-actionbar"));
+                    p.sendActionBar(msg);
                 }
             }
         }, 0L, 20L);

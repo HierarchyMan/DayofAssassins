@@ -22,11 +22,16 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
  * TAB hard-depend display: bossbar + scoreboard lines (rendered via {@link EventDisplayRenderer}).
+ * Memory snapshot drives pushes — lines rebuild only when text fingerprint changes; scoreboard
+ * is shown once per player unless the board is cleared or content changes.
  */
 public final class TabDisplayService {
 
@@ -43,6 +48,11 @@ public final class TabDisplayService {
     private Scoreboard scoreboard;
     private boolean available = true;
     private boolean active;
+
+    private String lastBossTitle;
+    private float lastBossProgress = Float.NaN;
+    private String lastScoreboardFingerprint;
+    private final Set<UUID> scoreboardShown = ConcurrentHashMap.newKeySet();
 
     public TabDisplayService(
             EventManager eventManager,
@@ -111,8 +121,16 @@ public final class TabDisplayService {
 
             active = true;
             if (bossBar != null) {
-                bossBar.setTitle(EventDisplayRenderer.colorAmpersandToSection(bar.titleLegacyAmpersand()));
-                bossBar.setProgress(bar.progress());
+                String title = EventDisplayRenderer.colorAmpersandToSection(bar.titleLegacyAmpersand());
+                float progress = bar.progress();
+                if (!title.equals(lastBossTitle)) {
+                    bossBar.setTitle(title);
+                    lastBossTitle = title;
+                }
+                if (Float.isNaN(lastBossProgress) || Math.abs(progress - lastBossProgress) > 0.001f) {
+                    bossBar.setProgress(progress);
+                    lastBossProgress = progress;
+                }
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     TabPlayer tp = TabAPI.getInstance().getPlayer(p.getUniqueId());
                     if (tp != null && !bossBar.containsPlayer(tp)) {
@@ -128,23 +146,35 @@ public final class TabDisplayService {
                         topName,
                         topKills == null ? 0 : topKills
                 );
-                try {
-                    List<?> current = scoreboard.getLines();
-                    int size = current == null ? 0 : current.size();
-                    for (int i = size - 1; i >= 0; i--) {
-                        scoreboard.removeLine(i);
+                String fingerprint = scoreboardFingerprint(phase, topName, topKills == null ? 0 : topKills, sb);
+                boolean contentChanged = !fingerprint.equals(lastScoreboardFingerprint);
+                if (contentChanged) {
+                    try {
+                        List<?> current = scoreboard.getLines();
+                        int size = current == null ? 0 : current.size();
+                        for (int i = size - 1; i >= 0; i--) {
+                            scoreboard.removeLine(i);
+                        }
+                        for (String line : sb.linesSectionColor()) {
+                            scoreboard.addLine(line == null || line.isBlank() ? " " : line);
+                        }
+                    } catch (Throwable t) {
+                        logger.log(Level.FINE, "scoreboard line refresh failed", t);
                     }
-                    for (String line : sb.linesSectionColor()) {
-                        scoreboard.addLine(line == null || line.isBlank() ? " " : line);
-                    }
-                } catch (Throwable t) {
-                    logger.log(Level.FINE, "scoreboard line refresh failed", t);
+                    lastScoreboardFingerprint = fingerprint;
+                    // Content change: re-show so TAB clients refresh line payloads.
+                    scoreboardShown.clear();
                 }
                 ScoreboardManager sbm = TabAPI.getInstance().getScoreboardManager();
                 for (Player p : Bukkit.getOnlinePlayers()) {
-                    TabPlayer tp = TabAPI.getInstance().getPlayer(p.getUniqueId());
+                    UUID id = p.getUniqueId();
+                    if (scoreboardShown.contains(id)) {
+                        continue;
+                    }
+                    TabPlayer tp = TabAPI.getInstance().getPlayer(id);
                     if (tp != null && sbm != null) {
                         sbm.showScoreboard(tp, scoreboard);
+                        scoreboardShown.add(id);
                     }
                 }
             }
@@ -153,11 +183,30 @@ public final class TabDisplayService {
         }
     }
 
+    private static String scoreboardFingerprint(
+            EventPhase phase,
+            String topName,
+            int topKills,
+            EventDisplayRenderer.ScoreboardView sb
+    ) {
+        StringBuilder b = new StringBuilder(64);
+        b.append(phase == null ? "IDLE" : phase.name()).append('|');
+        b.append(topName == null ? "" : topName).append('|').append(topKills).append('|');
+        for (String line : sb.linesSectionColor()) {
+            b.append(line == null ? "" : line).append('\n');
+        }
+        return b.toString();
+    }
+
     public void clear() {
         if (!available || !active) {
             return;
         }
         active = false;
+        lastBossTitle = null;
+        lastBossProgress = Float.NaN;
+        lastScoreboardFingerprint = null;
+        scoreboardShown.clear();
         try {
             if (bossBar != null) {
                 for (TabPlayer tp : new ArrayList<>(bossBar.getPlayers())) {
@@ -175,6 +224,13 @@ public final class TabDisplayService {
             }
         } catch (Throwable t) {
             logger.log(Level.FINE, "TAB clear failed", t);
+        }
+    }
+
+    /** Drop scoreboard-shown flag so next update re-applies for joiners mid-event. */
+    public void onPlayerQuit(UUID uuid) {
+        if (uuid != null) {
+            scoreboardShown.remove(uuid);
         }
     }
 

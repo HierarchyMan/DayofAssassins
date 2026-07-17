@@ -3,29 +3,41 @@ package com.fusion.dev.cystol.compass;
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.util.TextUtil;
-import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.CompassMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class CompassService {
 
+    /** Squared blocks — skip lodestone rewrite if target moved less than this. */
+    private static final double MOVE_THRESHOLD_SQ = 2.25; // 1.5 blocks
+
     private final PluginConfig config;
     private final Lang lang;
     private final CompassKeys keys;
     private final ConcurrentHashMap<UUID, UUID> targets = new ConcurrentHashMap<>();
+    /** Last lodestone snapshot per hunter: world name + block coords. */
+    private final ConcurrentHashMap<UUID, LodestoneSnap> lastLodestone = new ConcurrentHashMap<>();
+
+    private record LodestoneSnap(String world, int x, int y, int z, boolean sameWorld) {
+    }
 
     public CompassService(PluginConfig config, Lang lang, CompassKeys keys) {
         this.config = config;
@@ -105,25 +117,33 @@ public final class CompassService {
     public void setTarget(Player player, UUID target) {
         if (target == null) {
             targets.remove(player.getUniqueId());
+            lastLodestone.remove(player.getUniqueId());
         } else {
             targets.put(player.getUniqueId(), target);
+            lastLodestone.remove(player.getUniqueId());
         }
         refreshCompassItems(player);
     }
 
     public void clearTarget(Player player) {
         targets.remove(player.getUniqueId());
+        lastLodestone.remove(player.getUniqueId());
         refreshCompassItems(player);
     }
 
     public void clearTargetIf(UUID targetId) {
+        List<UUID> hunters = new ArrayList<>();
         for (Map.Entry<UUID, UUID> e : targets.entrySet()) {
             if (targetId.equals(e.getValue())) {
-                targets.remove(e.getKey());
-                Player p = Bukkit.getPlayer(e.getKey());
-                if (p != null) {
-                    refreshCompassItems(p);
-                }
+                hunters.add(e.getKey());
+            }
+        }
+        for (UUID hunterId : hunters) {
+            targets.remove(hunterId);
+            lastLodestone.remove(hunterId);
+            Player p = Bukkit.getPlayer(hunterId);
+            if (p != null) {
+                refreshCompassItems(p);
             }
         }
     }
@@ -176,6 +196,7 @@ public final class CompassService {
         } else if (target == null || !target.isOnline()) {
             stateKey = "compass.item.lost-target";
             targets.remove(owner.getUniqueId());
+            lastLodestone.remove(owner.getUniqueId());
         } else if (!target.getWorld().equals(owner.getWorld())) {
             stateKey = "compass.item.tracking-other-world";
             ph.put("target", target.getName());
@@ -189,13 +210,29 @@ public final class CompassService {
         meta.lore(TextUtil.componentList(lang.rawList(stateKey + ".lore"), ph));
         meta.getPersistentDataContainer().set(keys.compassItem, PersistentDataType.BYTE, (byte) 1);
         if (meta instanceof CompassMeta compassMeta && target != null && target.getWorld().equals(owner.getWorld())) {
-            compassMeta.setLodestone(target.getLocation());
+            Location loc = target.getLocation();
+            compassMeta.setLodestone(loc);
             compassMeta.setLodestoneTracked(false);
+            lastLodestone.put(owner.getUniqueId(), snapOf(loc, true));
         } else if (meta instanceof CompassMeta compassMeta) {
             compassMeta.setLodestone(null);
             compassMeta.setLodestoneTracked(false);
+            lastLodestone.put(owner.getUniqueId(), new LodestoneSnap(null, 0, 0, 0, false));
         }
         stack.setItemMeta(meta);
+    }
+
+    /**
+     * Tick only hunters who currently have a target (not all online players).
+     */
+    public void tickAllTrackers() {
+        Set<UUID> hunters = Set.copyOf(targets.keySet());
+        for (UUID hunterId : hunters) {
+            Player hunter = Bukkit.getPlayer(hunterId);
+            if (hunter != null && hunter.isOnline()) {
+                tickTracking(hunter);
+            }
+        }
     }
 
     public void tickTracking(Player player) {
@@ -208,26 +245,93 @@ public final class CompassService {
             clearTarget(player);
             return;
         }
-        // refresh lodestone lodestone
-        for (ItemStack stack : player.getInventory().getContents()) {
+        boolean sameWorld = target.getWorld().equals(player.getWorld());
+        Location targetLoc = target.getLocation();
+        LodestoneSnap prev = lastLodestone.get(player.getUniqueId());
+        if (prev != null && !needsLodestoneUpdate(prev, targetLoc, sameWorld)) {
+            if (!sameWorld) {
+                player.sendActionBar(lang.msg("compass.other-world-actionbar",
+                        Map.of("world", target.getWorld().getName())));
+            }
+            return;
+        }
+
+        applyLodestoneToCompasses(player, sameWorld ? targetLoc : null, sameWorld);
+        lastLodestone.put(player.getUniqueId(), sameWorld
+                ? snapOf(targetLoc, true)
+                : new LodestoneSnap(target.getWorld().getName(), 0, 0, 0, false));
+
+        if (!sameWorld) {
+            player.sendActionBar(lang.msg("compass.other-world-actionbar",
+                    Map.of("world", target.getWorld().getName())));
+        }
+    }
+
+    private static boolean needsLodestoneUpdate(LodestoneSnap prev, Location targetLoc, boolean sameWorld) {
+        if (prev.sameWorld() != sameWorld) {
+            return true;
+        }
+        if (!sameWorld) {
+            // other-world: lodestone already cleared; no meta rewrite needed each tick
+            return false;
+        }
+        World w = targetLoc.getWorld();
+        if (w == null || prev.world() == null || !prev.world().equals(w.getName())) {
+            return true;
+        }
+        int bx = targetLoc.getBlockX();
+        int by = targetLoc.getBlockY();
+        int bz = targetLoc.getBlockZ();
+        double dx = bx - prev.x();
+        double dy = by - prev.y();
+        double dz = bz - prev.z();
+        return (dx * dx + dy * dy + dz * dz) >= MOVE_THRESHOLD_SQ;
+    }
+
+    private static LodestoneSnap snapOf(Location loc, boolean sameWorld) {
+        World w = loc.getWorld();
+        return new LodestoneSnap(
+                w == null ? null : w.getName(),
+                loc.getBlockX(),
+                loc.getBlockY(),
+                loc.getBlockZ(),
+                sameWorld
+        );
+    }
+
+    private void applyLodestoneToCompasses(Player player, Location lodestone, boolean sameWorld) {
+        for (int i = 0; i < player.getInventory().getSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
             if (!isCompass(stack)) {
                 continue;
             }
             ItemMeta meta = stack.getItemMeta();
             if (meta instanceof CompassMeta compassMeta) {
-                if (target.getWorld().equals(player.getWorld())) {
-                    compassMeta.setLodestone(target.getLocation());
+                if (sameWorld && lodestone != null) {
+                    compassMeta.setLodestone(lodestone);
                     compassMeta.setLodestoneTracked(false);
                 } else {
                     compassMeta.setLodestone(null);
+                    compassMeta.setLodestoneTracked(false);
                 }
                 stack.setItemMeta(compassMeta);
+                player.getInventory().setItem(i, stack);
             }
         }
-        // action bar other dimension (lang-driven)
-        if (!target.getWorld().equals(player.getWorld())) {
-            player.sendActionBar(lang.msg("compass.other-world-actionbar",
-                    Map.of("world", target.getWorld().getName())));
+        ItemStack off = player.getInventory().getItemInOffHand();
+        if (isCompass(off)) {
+            ItemMeta meta = off.getItemMeta();
+            if (meta instanceof CompassMeta compassMeta) {
+                if (sameWorld && lodestone != null) {
+                    compassMeta.setLodestone(lodestone);
+                    compassMeta.setLodestoneTracked(false);
+                } else {
+                    compassMeta.setLodestone(null);
+                    compassMeta.setLodestoneTracked(false);
+                }
+                off.setItemMeta(compassMeta);
+                player.getInventory().setItemInOffHand(off);
+            }
         }
     }
 

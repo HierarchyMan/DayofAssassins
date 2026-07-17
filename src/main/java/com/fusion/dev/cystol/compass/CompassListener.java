@@ -2,6 +2,7 @@ package com.fusion.dev.cystol.compass;
 
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
+import com.fusion.dev.cystol.display.TabDisplayService;
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.fx.EffectService;
@@ -43,6 +44,7 @@ public final class CompassListener implements Listener {
     private final Lang lang;
     private final PluginConfig config;
     private final EffectService effects;
+    private final TabDisplayService tabDisplayService;
     private final Set<UUID> fullInvHinted = ConcurrentHashMap.newKeySet();
     private final Map<UUID, BukkitTask> hintTasks = new ConcurrentHashMap<>();
 
@@ -53,7 +55,8 @@ public final class CompassListener implements Listener {
             EventManager eventManager,
             Lang lang,
             PluginConfig config,
-            EffectService effects
+            EffectService effects,
+            TabDisplayService tabDisplayService
     ) {
         this.plugin = plugin;
         this.compassService = compassService;
@@ -62,6 +65,7 @@ public final class CompassListener implements Listener {
         this.lang = lang;
         this.config = config;
         this.effects = effects;
+        this.tabDisplayService = tabDisplayService;
     }
 
     private boolean eventActive() {
@@ -134,9 +138,14 @@ public final class CompassListener implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
-        compassService.clearTargetIf(event.getPlayer().getUniqueId());
-        cancelHint(event.getPlayer().getUniqueId());
-        fullInvHinted.remove(event.getPlayer().getUniqueId());
+        UUID id = event.getPlayer().getUniqueId();
+        compassService.clearTargetIf(id);
+        cancelHint(id);
+        fullInvHinted.remove(id);
+        compassGui.evictHead(id);
+        if (tabDisplayService != null) {
+            tabDisplayService.onPlayerQuit(id);
+        }
     }
 
     @EventHandler

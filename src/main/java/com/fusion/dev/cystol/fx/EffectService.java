@@ -5,10 +5,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
-import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 
+import java.util.EnumMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -38,10 +39,22 @@ public final class EffectService {
 
     private final PluginConfig config;
     private final Logger logger;
+    private volatile Map<EffectKey, EffectPlan> plans;
 
     public EffectService(PluginConfig config, Logger logger) {
         this.config = config;
         this.logger = logger;
+        rebuildCache();
+    }
+
+    /** Call after config reload so paths re-resolve once. */
+    public void rebuildCache() {
+        EnumMap<EffectKey, EffectPlan> next = new EnumMap<>(EffectKey.class);
+        boolean master = config.effectsEnabled();
+        for (EffectKey key : EffectKey.values()) {
+            next.put(key, EffectResolver.resolve(master, config.effectSection(key.path())));
+        }
+        this.plans = Map.copyOf(next);
     }
 
     /**
@@ -50,6 +63,13 @@ public final class EffectService {
     public EffectPlan plan(EffectKey key) {
         if (key == null) {
             return EffectPlan.disabled();
+        }
+        Map<EffectKey, EffectPlan> cache = plans;
+        if (cache != null) {
+            EffectPlan cached = cache.get(key);
+            if (cached != null) {
+                return cached;
+            }
         }
         return EffectResolver.resolve(config.effectsEnabled(), config.effectSection(key.path()));
     }

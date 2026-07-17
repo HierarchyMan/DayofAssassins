@@ -8,14 +8,20 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 public final class FfaSpawnService {
+
+    /** Players teleported per server tick to avoid one-frame freezes. */
+    public static final int DEFAULT_BATCH_SIZE = 10;
 
     private final PluginConfig config;
     private final Logger logger;
@@ -64,6 +70,13 @@ public final class FfaSpawnService {
                 xz -> cuboid.containsHorizontal(xz[0], xz[1]),
                 rng
         );
+
+        // Touch chunks once per unique column before Y probes.
+        for (RingSpawnMath.SpawnPoint sp : points) {
+            int bx = (int) Math.floor(sp.x());
+            int bz = (int) Math.floor(sp.z());
+            world.getChunkAt(bx >> 4, bz >> 4);
+        }
 
         List<Location> locations = new ArrayList<>(points.size());
         for (RingSpawnMath.SpawnPoint sp : points) {
@@ -126,6 +139,9 @@ public final class FfaSpawnService {
         return true;
     }
 
+    /**
+     * Synchronous teleport (tests / small lists). Prefer {@link #teleportPlayersBatched}.
+     */
     public void teleportPlayers(List<Player> players) {
         if (players.isEmpty()) {
             return;
@@ -138,5 +154,58 @@ public final class FfaSpawnService {
             }
             players.get(i).teleport(loc);
         }
+    }
+
+    /**
+     * Plan safe points once, then teleport in batches across ticks so large FFAs
+     * do not freeze a single frame. {@code afterEach} runs on the main thread per player;
+     * {@code onComplete} once all batches finish.
+     */
+    public BukkitTask teleportPlayersBatched(
+            JavaPlugin plugin,
+            List<Player> players,
+            int batchSize,
+            Consumer<Player> afterEach,
+            Runnable onComplete
+    ) {
+        if (players.isEmpty()) {
+            if (onComplete != null) {
+                onComplete.run();
+            }
+            return null;
+        }
+        int batch = Math.max(1, batchSize);
+        List<Player> ordered = new ArrayList<>(players);
+        List<Location> locs = buildSpawnLocations(ordered.size());
+        final int[] index = {0};
+        final BukkitTask[] holder = new BukkitTask[1];
+        holder[0] = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            int start = index[0];
+            int end = Math.min(start + batch, ordered.size());
+            for (int i = start; i < end; i++) {
+                Player p = ordered.get(i);
+                if (p == null || !p.isOnline()) {
+                    continue;
+                }
+                Location loc = i < locs.size() ? locs.get(i) : locs.isEmpty() ? null : locs.get(0);
+                if (loc == null) {
+                    continue;
+                }
+                p.teleport(loc);
+                if (afterEach != null) {
+                    afterEach.accept(p);
+                }
+            }
+            index[0] = end;
+            if (end >= ordered.size()) {
+                if (holder[0] != null) {
+                    holder[0].cancel();
+                }
+                if (onComplete != null) {
+                    onComplete.run();
+                }
+            }
+        }, 0L, 1L);
+        return holder[0];
     }
 }

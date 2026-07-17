@@ -20,6 +20,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class CompassGui {
 
@@ -27,6 +28,8 @@ public final class CompassGui {
     private final KillService killService;
     private final Lang lang;
     private final EffectService effects;
+    /** Base player-head with skin ownership only — name/lore applied per open. */
+    private final ConcurrentHashMap<UUID, ItemStack> headBaseCache = new ConcurrentHashMap<>();
 
     public CompassGui(CompassService compassService, KillService killService, Lang lang, EffectService effects) {
         this.compassService = compassService;
@@ -50,10 +53,6 @@ public final class CompassGui {
             if (p.getUniqueId().equals(viewer.getUniqueId())) {
                 continue;
             }
-            if (p.isInvisible()) {
-                // basic vanish-ish; real vanish plugins set metadata — still list if not metadata
-            }
-            // SuperVanish etc. often use Metadata "vanished"
             if (p.hasMetadata("vanished") && !p.getMetadata("vanished").isEmpty()
                     && p.getMetadata("vanished").getFirst().asBoolean()) {
                 continue;
@@ -76,7 +75,6 @@ public final class CompassGui {
             }
         }
 
-        // nav
         gui.setItem(6, 3, ItemBuilder.from(Material.ARROW)
                 .name(TextUtil.component(lang.raw("compass.gui.prev-page.name"),
                         Map.of("page", String.valueOf(gui.getCurrentPageNum()),
@@ -119,9 +117,8 @@ public final class CompassGui {
                 ? lang.rawList("compass.gui.player.lore-selected")
                 : lang.rawList("compass.gui.player.lore");
 
-        ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
+        ItemStack skull = headBase(target).clone();
         SkullMeta meta = (SkullMeta) skull.getItemMeta();
-        meta.setOwningPlayer(target);
         meta.displayName(TextUtil.component(lang.raw("compass.gui.player.name"), ph));
         meta.lore(TextUtil.componentList(loreKeys, ph));
         skull.setItemMeta(meta);
@@ -132,5 +129,21 @@ public final class CompassGui {
             viewer.sendMessage(lang.msg("compass.tracking-selected", Map.of("target", target.getName())));
             viewer.closeInventory();
         });
+    }
+
+    private ItemStack headBase(Player target) {
+        return headBaseCache.computeIfAbsent(target.getUniqueId(), id -> {
+            ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
+            SkullMeta meta = (SkullMeta) skull.getItemMeta();
+            meta.setOwningPlayer(target);
+            skull.setItemMeta(meta);
+            return skull;
+        });
+    }
+
+    public void evictHead(UUID uuid) {
+        if (uuid != null) {
+            headBaseCache.remove(uuid);
+        }
     }
 }

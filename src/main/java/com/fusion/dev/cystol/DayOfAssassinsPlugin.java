@@ -14,6 +14,7 @@ import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.display.TabDisplayService;
 import com.fusion.dev.cystol.event.EventManager;
+import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.event.EventScheduler;
 import com.fusion.dev.cystol.fx.EffectService;
 import com.fusion.dev.cystol.kill.KillService;
@@ -100,7 +101,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         tabDisplayService.init();
 
         CompassListener compassListener = new CompassListener(
-                this, compassService, compassGui, eventManager, lang, config, effects
+                this, compassService, compassGui, eventManager, lang, config, effects, tabDisplayService
         );
 
         eventScheduler = new EventScheduler(
@@ -113,9 +114,11 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
                 new PvpManagerKillListener(eventManager, killService, effects, getLogger()), this);
 
+        // Only hunters with a target, and only during scoring phases.
         getServer().getScheduler().runTaskTimer(this, () -> {
-            for (var p : getServer().getOnlinePlayers()) {
-                compassService.tickTracking(p);
+            EventPhase phase = eventManager.phase();
+            if (phase == EventPhase.HUNT || phase == EventPhase.FFA) {
+                compassService.tickAllTrackers();
             }
         }, 20L, 20L);
 
@@ -143,6 +146,9 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         }
         if (eventManager != null) {
             eventManager.persist();
+        }
+        if (killService != null) {
+            killService.shutdown();
         }
         if (database != null) {
             database.close();

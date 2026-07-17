@@ -30,6 +30,12 @@ class SqliteAccessTest {
             assertTrue(c.isValid(2));
 
             try (Statement st = c.createStatement();
+                 ResultSet pragma = st.executeQuery("PRAGMA journal_mode")) {
+                assertTrue(pragma.next());
+                assertEquals("wal", pragma.getString(1).toLowerCase());
+            }
+
+            try (Statement st = c.createStatement();
                  ResultSet rs = st.executeQuery(
                          "SELECT phase, ffa_teleported, ceremony_done FROM event_state WHERE id = 1")) {
                 assertTrue(rs.next());

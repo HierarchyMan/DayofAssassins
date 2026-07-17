@@ -30,18 +30,18 @@ public final class EndCeremonyService {
     }
 
     public void runCeremony() {
+        // Single frozen ranking snapshot for the whole ceremony (cached in KillService).
         List<DenseRanking.Entry> ranking = killService.ranking();
         logger.info("Running end ceremony for " + ranking.size() + " ranked players");
 
-        Map<UUID, DenseRanking.Entry> byId = new HashMap<>();
+        Map<UUID, DenseRanking.Entry> byId = new HashMap<>(Math.max(16, ranking.size() * 2));
+        int maxPlace = 0;
         for (DenseRanking.Entry e : ranking) {
             byId.put(e.uuid(), e);
+            if (e.place() > maxPlace) {
+                maxPlace = e.place();
+            }
         }
-
-        // Online players: show their place (0 kills => not in ranking unless we include them)
-        // Design: offline count as winners too; everyone with a kill row is ranked.
-        // Online with 0 kills still get place-other with place = ranking size + 1 if not present
-        int maxPlace = ranking.stream().mapToInt(DenseRanking.Entry::place).max().orElse(0);
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             DenseRanking.Entry entry = byId.get(player.getUniqueId());
