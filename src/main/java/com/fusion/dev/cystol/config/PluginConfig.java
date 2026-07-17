@@ -72,6 +72,48 @@ public final class PluginConfig {
         return cfg().getLong("ffa.outside-actionbar-seconds", 60L);
     }
 
+    /** Last-seconds 5…1 title countdown before FFA ring TP. */
+    public boolean ffaFinalCountdownEnabled() {
+        return cfg().getBoolean("ffa.final-countdown.enabled", true);
+    }
+
+    /**
+     * Highest digit shown (5 → 5,4,3,2,1). {@code 0} disables even if enabled is true.
+     */
+    public int ffaFinalCountdownFromSeconds() {
+        return Math.max(0, cfg().getInt("ffa.final-countdown.from-seconds", 5));
+    }
+
+    /**
+     * Who sees the final countdown titles/sounds: {@code all} (default) or {@code eligible}
+     * (same rules as FFA TP: survival, unvanished, no bypass).
+     */
+    public String ffaFinalCountdownAudience() {
+        String v = cfg().getString("ffa.final-countdown.audience", "all");
+        return v == null ? "all" : v.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    public int ffaFinalCountdownFadeInMs() {
+        return Math.max(0, cfg().getInt("ffa.final-countdown.title-fade-in-ms", 0));
+    }
+
+    public int ffaFinalCountdownStayMs() {
+        return Math.max(50, cfg().getInt("ffa.final-countdown.title-stay-ms", 800));
+    }
+
+    public int ffaFinalCountdownFadeOutMs() {
+        return Math.max(0, cfg().getInt("ffa.final-countdown.title-fade-out-ms", 150));
+    }
+
+    public float ffaFinalCountdownPitchBase() {
+        return (float) cfg().getDouble("ffa.final-countdown.pitch-base", 0.9);
+    }
+
+    /** Added per step as remaining seconds drop (5→4→…→1). */
+    public float ffaFinalCountdownPitchStep() {
+        return (float) cfg().getDouble("ffa.final-countdown.pitch-step", 0.12);
+    }
+
     public double maxDiameterFraction() {
         return cfg().getDouble("ffa.max-diameter-fraction", 0.75);
     }

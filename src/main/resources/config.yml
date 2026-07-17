@@ -8,6 +8,17 @@ ffa:
   announce-lead-seconds: 3600
   announce-interval-seconds: 600
   outside-actionbar-seconds: 60
+  # Last-second beat before ring TP: titles 5…1 with rising pitch sound
+  final-countdown:
+    enabled: true
+    from-seconds: 5
+    # all = everyone online | eligible = same filter as FFA TP
+    audience: all
+    title-fade-in-ms: 0
+    title-stay-ms: 800
+    title-fade-out-ms: 150
+    pitch-base: 0.9
+    pitch-step: 0.12
   max-diameter-fraction: 0.75
   min-air-above: 2
   y-search-range: 12
@@ -50,7 +61,7 @@ tab:
       - line: 4
         text: "&7Top: &f%top_killer% &8(%top_kills%)"
       - line: 5
-        text: "&7Phase: &f%phase%"
+        text: "&7%phase% &8| &f%remaining%"
   bossbar:
     enabled: true
     color: RED
@@ -58,6 +69,17 @@ tab:
 
 effects:
   enabled: true
+  hunt:
+    start:
+      sound:
+        enabled: true
+        sound: "minecraft:entity.ender_dragon.growl"
+        volume: 0.6
+        pitch: 1.2
+      particle:
+        enabled: false
+        particle: FLAME
+        count: 8
   compass:
     open-gui:
       sound:
@@ -118,6 +140,17 @@ effects:
         sound: "minecraft:block.note_block.pling"
         volume: 1.0
         pitch: 1.0
+    final-countdown:
+      sound:
+        enabled: true
+        sound: "minecraft:block.note_block.pling"
+        volume: 1.0
+        # Base pitch; runtime overrides with pitch-base + pitch-step * steps
+        pitch: 0.9
+      particle:
+        enabled: false
+        particle: NOTE
+        count: 4
     teleport:
       sound:
         enabled: true

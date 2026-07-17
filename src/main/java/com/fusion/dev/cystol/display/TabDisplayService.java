@@ -7,6 +7,7 @@ import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.event.EventTimeline;
 import com.fusion.dev.cystol.kill.DenseRanking;
 import com.fusion.dev.cystol.kill.KillService;
+import com.fusion.dev.cystol.util.TimeUtil;
 import me.neznamy.tab.api.TabAPI;
 import me.neznamy.tab.api.TabPlayer;
 import me.neznamy.tab.api.bossbar.BarColor;
@@ -140,9 +141,13 @@ public final class TabDisplayService {
             }
 
             if (scoreboard != null) {
+                String remaining = TimeUtil.formatCountdown(timeline.secondsUntilEnd(now));
+                String phaseLabel = lang.raw("phase." + phase.name().toLowerCase(), phase.name());
                 EventDisplayRenderer.ScoreboardView sb = EventDisplayRenderer.renderScoreboardLines(
                         config.scoreboardLines(),
                         phase,
+                        phaseLabel,
+                        remaining,
                         topName,
                         topKills == null ? 0 : topKills
                 );

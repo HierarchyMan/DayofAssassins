@@ -34,6 +34,11 @@ import java.util.logging.Level;
 
 /**
  * Paper-only plugin (loaded via {@code paper-plugin.yml}, not Bukkit {@code plugin.yml}).
+ *
+ * <p><b>Agents / AI contributors:</b> do <b>not</b> add unit tests for every small UX string,
+ * config default, or scheduler glue. Prefer a few high-value tests for pure math, ranking,
+ * timeline, and config resolution. Manual / in-game checks are fine for titles, sounds, and
+ * join messaging. Skip one-off tests unless logic is non-trivial or regression-prone.
  */
 public final class DayOfAssassinsPlugin extends JavaPlugin {
 

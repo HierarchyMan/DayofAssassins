@@ -115,6 +115,15 @@ public final class EventTimeline {
         return clamp01((double) elapsed / (double) total);
     }
 
+    /** Whole seconds until {@code end}, or 0 if unset / already past. */
+    public long secondsUntilEnd(Instant now) {
+        Objects.requireNonNull(now, "now");
+        if (end == null) {
+            return 0L;
+        }
+        return Math.max(0L, end.getEpochSecond() - now.getEpochSecond());
+    }
+
     public boolean killsCountAt(Instant now) {
         EventPhase p = phaseAt(now);
         return p == EventPhase.HUNT || p == EventPhase.FFA;

@@ -9,11 +9,24 @@ event:
     - "&7Hunt players with the Assassin's Compass."
     - "&7Rack up kills — highest kills wins."
     - "&7A final deathmatch teleports you near the end."
+  join-countdown: "&cDay of Assassins &7starts soon — &f/event &7for details."
+
+phase:
+  idle: "Idle"
+  countdown: "Countdown"
+  hunt: "Hunt"
+  ffa: "Finale"
+  ended: "Ended"
+
+hunt:
+  start-title: "&c&lTHE HUNT BEGINS"
+  start-subtitle: "&7Track with your compass — highest kills wins"
+  join-message: "&c&lDay of Assassins &7is live! Use your &fAssassin's Compass &7to hunt."
 
 bossbar:
   countdown-title: "&cDay of Assassins &7starts in &f%countdown%"
-  title: "&cDay of Assassins &7| &f%top_killer%"
-  title-no-kills: "&cDay of Assassins &7| &8Nobody yet"
+  title: "&cDay of Assassins &7| &f%top_killer% &8(%top_kills%) &7| &f%remaining%"
+  title-no-kills: "&cDay of Assassins &7| &8Nobody yet &7| &f%remaining%"
 
 compass:
   already-have: "&cYou already have the Assassin's Compass."
@@ -85,8 +98,11 @@ killtop:
 ffa:
   announce-title: "&c&lFinal deathmatch"
   announce-subtitle: "&7Begins in &f%countdown%"
+  final-countdown-title: "&c&l%seconds%"
+  final-countdown-subtitle: "&7Teleporting to the arena..."
   start-title: "&c&lFIGHT"
   start-subtitle: "&7The final deathmatch has begun"
+  join-message: "&c&lFinale active! &7Get to the arena — kills still count until the end."
   outside-actionbar: "&eEvent finale is here — &f/warp pvparena"
 
 end:

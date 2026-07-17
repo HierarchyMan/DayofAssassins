@@ -41,6 +41,8 @@ public final class EventDisplayRenderer {
     /**
      * Build bossbar content for the given timeline moment.
      *
+     * <p>Live templates may use {@code %top_killer%}, {@code %top_kills%}, {@code %remaining%}.
+     *
      * @param countdownTitleTemplate lang bossbar.countdown-title
      * @param liveTitleTemplate      lang bossbar.title
      * @param noKillsTitleTemplate   lang bossbar.title-no-kills
@@ -68,15 +70,16 @@ public final class EventDisplayRenderer {
             float progress = (float) timeline.countdownFillProgress(now, announceLeadSeconds);
             return new BossBarView(title, clamp01(progress), true);
         }
-        // live (hunt/ffa) or ended — caller typically only shows while active
+        String remaining = TimeUtil.formatCountdown(timeline.secondsUntilEnd(now));
         String title;
         if (topKillerName != null && !topKillerName.isBlank()) {
             title = TextUtil.apply(liveTitleTemplate, Map.of(
                     "top_killer", topKillerName,
-                    "top_kills", String.valueOf(topKills == null ? 0 : topKills)
+                    "top_kills", String.valueOf(topKills == null ? 0 : topKills),
+                    "remaining", remaining
             ));
         } else {
-            title = TextUtil.apply(noKillsTitleTemplate, Map.of());
+            title = TextUtil.apply(noKillsTitleTemplate, Map.of("remaining", remaining));
         }
         float progress = (float) timeline.liveFillProgress(now);
         return new BossBarView(title, clamp01(progress), false);
@@ -85,17 +88,25 @@ public final class EventDisplayRenderer {
     /**
      * Inject event templates into a sparse line list at configured indices, resolve placeholders,
      * convert &amp; → section for TAB.
+     *
+     * <p>Placeholders: {@code %top_killer%}, {@code %top_kills%}, {@code %phase%} (display label),
+     * {@code %remaining%}.
      */
     public static ScoreboardView renderScoreboardLines(
             List<PluginConfig.ScoreboardLine> configuredLines,
             EventPhase phase,
+            String phaseLabel,
+            String remainingFormatted,
             String topKillerName,
             int topKills
     ) {
         Map<String, String> ph = new HashMap<>();
         ph.put("top_killer", topKillerName == null || topKillerName.isBlank() ? "—" : topKillerName);
         ph.put("top_kills", String.valueOf(topKills));
-        ph.put("phase", phase == null ? "IDLE" : phase.name());
+        ph.put("phase", phaseLabel == null || phaseLabel.isBlank()
+                ? (phase == null ? "IDLE" : phase.name())
+                : phaseLabel);
+        ph.put("remaining", remainingFormatted == null ? "" : remainingFormatted);
 
         if (configuredLines == null || configuredLines.isEmpty()) {
             return new ScoreboardView(List.of());
@@ -124,6 +135,26 @@ public final class EventDisplayRenderer {
             rendered.set(line.line(), text.isBlank() ? " " : text);
         }
         return new ScoreboardView(List.copyOf(rendered));
+    }
+
+    /**
+     * @deprecated use {@link #renderScoreboardLines(List, EventPhase, String, String, String, int)}
+     */
+    @Deprecated
+    public static ScoreboardView renderScoreboardLines(
+            List<PluginConfig.ScoreboardLine> configuredLines,
+            EventPhase phase,
+            String topKillerName,
+            int topKills
+    ) {
+        return renderScoreboardLines(
+                configuredLines,
+                phase,
+                phase == null ? "IDLE" : phase.name(),
+                "",
+                topKillerName,
+                topKills
+        );
     }
 
     /**

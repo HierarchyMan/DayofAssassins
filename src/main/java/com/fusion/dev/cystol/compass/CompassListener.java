@@ -76,15 +76,30 @@ public final class CompassListener implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        if (!eventActive()) {
+        EventPhase phase = eventManager.phase();
+        if (phase != EventPhase.HUNT && phase != EventPhase.FFA && phase != EventPhase.COUNTDOWN) {
             return;
         }
-        Bukkit.getScheduler().runTaskLater(plugin, () -> tryGiveOnJoin(player), 10L);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> onJoinDelayed(player), 10L);
     }
 
-    private void tryGiveOnJoin(Player player) {
-        if (!player.isOnline() || !eventActive()) {
+    private void onJoinDelayed(Player player) {
+        if (!player.isOnline()) {
             return;
+        }
+        EventPhase phase = eventManager.phase();
+        if (phase == EventPhase.COUNTDOWN) {
+            player.sendMessage(lang.msg("event.join-countdown"));
+            return;
+        }
+        if (phase != EventPhase.HUNT && phase != EventPhase.FFA) {
+            return;
+        }
+        // Mid-event orientation (chat) — high-impact for late joiners
+        if (phase == EventPhase.HUNT) {
+            player.sendMessage(lang.msg("hunt.join-message"));
+        } else {
+            player.sendMessage(lang.msg("ffa.join-message"));
         }
         CompassService.GiveResult result = compassService.tryGive(player);
         if (result == CompassService.GiveResult.GIVEN) {

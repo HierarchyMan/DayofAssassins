@@ -59,12 +59,11 @@ class EventDisplayRendererTest {
         assertFalse(lines.isEmpty(), "config.yml must define tab.scoreboard.lines");
 
         EventDisplayRenderer.ScoreboardView view = EventDisplayRenderer.renderScoreboardLines(
-                lines, EventPhase.HUNT, "AssassinX", 12
+                lines, EventPhase.HUNT, "Hunt", "1h 0m", "AssassinX", 12
         );
 
         // default config: lines 3,4,5
         assertTrue(view.size() >= 6, "must pad through max index");
-        assertEquals(" ", view.lineAt(0).trim().isEmpty() ? " " : view.lineAt(0).substring(0, 1).equals("§") ? view.lineAt(0) : view.lineAt(0));
         // blank padding at 0..2
         assertTrue(view.lineAt(0).isBlank() || view.lineAt(0).equals(" "));
         assertTrue(view.lineAt(1).isBlank() || view.lineAt(1).equals(" "));
@@ -81,18 +80,19 @@ class EventDisplayRendererTest {
         assertTrue(top.contains("AssassinX"), "top killer injected: " + top);
         assertTrue(top.contains("12"), "top kills injected: " + top);
 
-        assertTrue(phase.contains("HUNT"), "phase injected: " + phase);
+        assertTrue(phase.contains("Hunt"), "phase label injected: " + phase);
+        assertTrue(phase.contains("1h") || phase.contains("0m"), "remaining injected: " + phase);
     }
 
     @Test
     void scoreboardEmptyTopKillerUsesEmDashPlaceholder() {
         List<PluginConfig.ScoreboardLine> lines = scoreboardLinesFromConfig();
         EventDisplayRenderer.ScoreboardView view = EventDisplayRenderer.renderScoreboardLines(
-                lines, EventPhase.FFA, null, 0
+                lines, EventPhase.FFA, "Finale", "30m", null, 0
         );
         String top = view.lineAt(4);
         assertTrue(top.contains("—") || top.contains("-"), "empty top: " + top);
-        assertTrue(view.lineAt(5).contains("FFA"), view.lineAt(5));
+        assertTrue(view.lineAt(5).contains("Finale"), view.lineAt(5));
     }
 
     @Test
@@ -146,6 +146,11 @@ class EventDisplayRendererTest {
         assertFalse(bar.countdownMode());
         assertEquals(0.5f, bar.progress(), 0.001f);
         assertTrue(bar.titleLegacyAmpersand().contains("TopDog"), bar.titleLegacyAmpersand());
+        // live templates include remaining time
+        assertTrue(bar.titleLegacyAmpersand().matches(".*\\d+[hmsd].*")
+                        || bar.titleLegacyAmpersand().contains("m")
+                        || bar.titleLegacyAmpersand().contains("h"),
+                "remaining in live bar: " + bar.titleLegacyAmpersand());
     }
 
     @Test

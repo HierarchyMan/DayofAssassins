@@ -21,7 +21,9 @@ public final class EffectService {
         MENU_PAGE("effects.menu.page-turn"),
         MENU_DENY("effects.menu.deny"),
         KILL_CREDITED("effects.kill.credited"),
+        HUNT_START("effects.hunt.start"),
         FFA_ANNOUNCE("effects.ffa.announce"),
+        FFA_FINAL_COUNTDOWN("effects.ffa.final-countdown"),
         FFA_TELEPORT("effects.ffa.teleport"),
         END_NORMAL("effects.end.normal"),
         END_TOP3("effects.end.top3");
@@ -78,10 +80,17 @@ public final class EffectService {
         if (player == null) {
             return;
         }
-        play(player, key, player.getLocation());
+        play(player, key, player.getLocation(), null);
     }
 
     public void play(Player player, EffectKey key, Location at) {
+        play(player, key, at, null);
+    }
+
+    /**
+     * @param pitchOverride if non-null, replaces the plan's configured pitch (e.g. rising countdown)
+     */
+    public void play(Player player, EffectKey key, Location at, Float pitchOverride) {
         if (player == null || key == null) {
             return;
         }
@@ -90,17 +99,17 @@ public final class EffectService {
             return;
         }
         if (plan.hasSound()) {
-            playSound(player, plan);
+            playSound(player, plan, pitchOverride);
         }
         if (plan.hasParticle()) {
             playParticle(at != null ? at : player.getLocation(), plan);
         }
     }
 
-    private void playSound(Player player, EffectPlan plan) {
+    private void playSound(Player player, EffectPlan plan, Float pitchOverride) {
         String name = plan.soundName();
         float volume = plan.volume();
-        float pitch = plan.pitch();
+        float pitch = pitchOverride != null ? pitchOverride : plan.pitch();
         try {
             if (name.startsWith("minecraft:")) {
                 player.playSound(player.getLocation(), name, volume, pitch);

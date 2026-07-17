@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.logging.Logger;
 
@@ -39,6 +40,7 @@ public final class EventScheduler {
 
     private BukkitTask tickTask;
     private final Set<Long> firedAnnounceEpochs = new HashSet<>();
+    private final Set<Integer> firedFinalCountdownSeconds = new HashSet<>();
     private Long announceScheduleKey;
     private EventPhase lastPhase = EventPhase.IDLE;
     private BukkitTask outsideActionbarTask;
@@ -71,6 +73,7 @@ public final class EventScheduler {
     public void start() {
         stop();
         firedAnnounceEpochs.clear();
+        firedFinalCountdownSeconds.clear();
         announceScheduleKey = null;
         // Recovery: if already mid-event after restart, ensure online players get compasses
         EventPhase current = eventManager.refreshPhase(Instant.now());
@@ -111,6 +114,7 @@ public final class EventScheduler {
         }
 
         if (phase == EventPhase.HUNT || phase == EventPhase.COUNTDOWN) {
+            maybeFinalCountdown(now);
             maybeAnnounceFfa(now);
         }
 
@@ -132,10 +136,96 @@ public final class EventScheduler {
                 && from != EventPhase.HUNT && from != EventPhase.FFA) {
             compassListener.giveToAllOnline();
         }
+        // Hunt kickoff toast (not on recovery into already-running FFA)
+        if (to == EventPhase.HUNT && from != EventPhase.HUNT) {
+            broadcastHuntStart();
+        }
         if (to == EventPhase.COUNTDOWN || to == EventPhase.IDLE) {
             firedAnnounceEpochs.clear();
+            firedFinalCountdownSeconds.clear();
             announceScheduleKey = null;
         }
+    }
+
+    private void broadcastHuntStart() {
+        Title title = Title.title(
+                lang.msg("hunt.start-title"),
+                lang.msg("hunt.start-subtitle"),
+                Title.Times.times(Duration.ofMillis(250), Duration.ofSeconds(3), Duration.ofMillis(500))
+        );
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.showTitle(title);
+            effects.play(p, EffectService.EffectKey.HUNT_START);
+        }
+    }
+
+    private void syncAnnounceSchedule(Instant ffa) {
+        long ffaEpoch = ffa.getEpochSecond();
+        if (announceScheduleKey == null || announceScheduleKey != ffaEpoch) {
+            firedAnnounceEpochs.clear();
+            firedFinalCountdownSeconds.clear();
+            announceScheduleKey = ffaEpoch;
+        }
+    }
+
+    /**
+     * Last N seconds before FFA moment: title + sound for each remaining second (default 5…1).
+     * Runs before ring TP so players get a clear beat, then {@link #runFfaTeleport} at FFA phase.
+     */
+    private void maybeFinalCountdown(Instant now) {
+        if (!config.ffaFinalCountdownEnabled()) {
+            return;
+        }
+        int from = config.ffaFinalCountdownFromSeconds();
+        if (from <= 0) {
+            return;
+        }
+        var ffaOpt = eventManager.ffaMoment();
+        if (ffaOpt.isEmpty()) {
+            return;
+        }
+        Instant ffa = ffaOpt.get();
+        syncAnnounceSchedule(ffa);
+        if (!now.isBefore(ffa)) {
+            return;
+        }
+        long secsToFfa = ffa.getEpochSecond() - now.getEpochSecond();
+        OptionalInt tick = FfaFinalCountdown.secondToAnnounce(secsToFfa, from, firedFinalCountdownSeconds);
+        if (tick.isEmpty()) {
+            return;
+        }
+        int remaining = tick.getAsInt();
+        firedFinalCountdownSeconds.add(remaining);
+
+        Map<String, String> ph = Map.of("seconds", String.valueOf(remaining));
+        Title.Times times = Title.Times.times(
+                Duration.ofMillis(config.ffaFinalCountdownFadeInMs()),
+                Duration.ofMillis(config.ffaFinalCountdownStayMs()),
+                Duration.ofMillis(config.ffaFinalCountdownFadeOutMs())
+        );
+        Title title = Title.title(
+                lang.msg("ffa.final-countdown-title", ph),
+                lang.msg("ffa.final-countdown-subtitle", ph),
+                times
+        );
+        float pitch = FfaFinalCountdown.pitchForRemaining(
+                config.ffaFinalCountdownPitchBase(),
+                config.ffaFinalCountdownPitchStep(),
+                from,
+                remaining
+        );
+
+        for (Player p : finalCountdownAudience()) {
+            p.showTitle(title);
+            effects.play(p, EffectService.EffectKey.FFA_FINAL_COUNTDOWN, p.getLocation(), pitch);
+        }
+    }
+
+    private List<Player> finalCountdownAudience() {
+        if ("eligible".equals(config.ffaFinalCountdownAudience())) {
+            return ffaSpawnService.eligiblePlayers();
+        }
+        return List.copyOf(Bukkit.getOnlinePlayers());
     }
 
     private void maybeAnnounceFfa(Instant now) {
@@ -144,13 +234,17 @@ public final class EventScheduler {
             return;
         }
         Instant ffa = ffaOpt.get();
-        long ffaEpoch = ffa.getEpochSecond();
-        if (announceScheduleKey == null || announceScheduleKey != ffaEpoch) {
-            firedAnnounceEpochs.clear();
-            announceScheduleKey = ffaEpoch;
-        }
+        syncAnnounceSchedule(ffa);
         if (!now.isBefore(ffa)) {
             return;
+        }
+        long secsToFfa = ffa.getEpochSecond() - now.getEpochSecond();
+        // Avoid double titles with the short 5…1 beat
+        if (config.ffaFinalCountdownEnabled()) {
+            int from = config.ffaFinalCountdownFromSeconds();
+            if (from > 0 && secsToFfa > 0 && secsToFfa <= from) {
+                return;
+            }
         }
         long lead = config.announceLeadSeconds();
         long interval = Math.max(1, config.announceIntervalSeconds());
@@ -158,7 +252,6 @@ public final class EventScheduler {
         if (now.isBefore(windowStart)) {
             return;
         }
-        long secsToFfa = ffa.getEpochSecond() - now.getEpochSecond();
         // Fire at interval boundaries: when remaining is multiple of interval, or first enter window
         long slotsFromFfa = secsToFfa / interval;
         long boundaryEpoch = ffa.getEpochSecond() - slotsFromFfa * interval;

@@ -61,6 +61,10 @@ class LangUxCompletenessTest {
     void ffaUxKeysPresent() {
         assertFalse(lang.getString("ffa.announce-title", "").isBlank());
         assertTrue(lang.getString("ffa.announce-subtitle").contains("%countdown%"));
+        assertTrue(lang.getString("ffa.final-countdown-title", "").contains("%seconds%"));
+        assertFalse(lang.getString("ffa.final-countdown-subtitle", "").isBlank());
+        assertFalse(lang.getString("ffa.start-title", "").isBlank());
+        assertFalse(lang.getString("ffa.start-subtitle", "").isBlank());
         assertFalse(lang.getString("ffa.outside-actionbar", "").isBlank());
     }
 }
