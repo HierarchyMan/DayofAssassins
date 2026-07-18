@@ -23,8 +23,9 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 | **Admin ops** | Status, time-jumps (`startnow` / `ffanow` / `endnow` / `phase`), force TP/ceremony, reload |
 | **Vanish** | Essentials/EssentialsX when present; else metadata `vanished` fallback |
 | **Hunt teleport lock** | Blocks warp/home/tp commands & plugin teleports outside spawn + arena during hunt (`preciv.teleport.bypass` to exempt) |
-| **Spawn safe zone** | Admins mark a spawn cuboid; players inside it are exempt from the hunt teleport lock |
-| **SQLite storage** | Event times/phase, kills, metrics — survives restarts mid-event |
+| **Spawn safe zone** | Admins mark a spawn cuboid with a **spawn wand**; free TP while standing inside during hunt lock |
+| **Hunt spawn RTP** | On hunt kickoff, **BetterRTP** everyone currently in the spawn cuboid (once). Joiners who land **in** the cuboid during live unpaused hunt are RTP’d too (not FFA / other phases) |
+| **SQLite storage** | Event times/phase, one-shot flags, kills, metrics — survives restarts mid-event |
 | **Fully configurable text** | All messages, item lore, menu titles in `lang.yml` |
 | **Effects** | Sounds/particles for compass, menus, kills, FFA, end (config toggles); kill title to killer + global kill sound |
 | **Paper-only plugin** | `paper-plugin.yml` + library loader (lean jar; SQLite downloaded by Paper) |
@@ -54,10 +55,11 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 
 ```
 Build arena in-world
-    → wand pos1/pos2 + centerspawn
+    → arena wand pos1/pos2 + centerspawn
+    → spawn wand (spawn cuboid for TP lock + hunt kickoff RTP)
     → set starttime + endtime (UTC+0)
     → FFA = end − 30 minutes (default, config)
-    → plugin runs the rest (announce, TP, scoring, ceremony)
+    → plugin runs the rest (spawn RTP, announce, ring TP, scoring, ceremony)
 ```
 
 **Dry-run / live ops** without editing the DB:
@@ -65,7 +67,7 @@ Build arena in-world
 ```text
 /preciv admin status
 /preciv admin startnow | ffanow | endnow
-/preciv admin forcetp | forceceremony | resetflags
+/preciv admin forcetp | forcespawnrtp | forceceremony | resetflags
 ```
 
 **Win condition:** most event kills when `endtime` hits.  
@@ -82,6 +84,7 @@ Build arena in-world
 | **[TAB](https://github.com/NEZNAMY/TAB)** | Hard depend — **scoreboard inject** needs TAB scoreboard feature on; event bossbar uses TAB when available, else **Paper/Bukkit** |
 | **[PvPManager](https://github.com/ChanceSD/PvPManager)** | Hard depend — kill credit (combat enemy API; Bukkit killer fallback) |
 | **Essentials / EssentialsX** | Soft depend — preferred vanish backend if present |
+| **[BetterRTP](https://www.spigotmc.org/resources/betterrtp-random-wild-teleport.36081/)** | Soft depend — hunt spawn-cuboid dump (kickoff + join). Event still runs without it; dump is skipped with a log warning |
 | **Network (first boot)** | Paper downloads `sqlite-jdbc` via the plugin loader (then cached) |
 
 ### TAB config (required for scoreboard lines)
@@ -103,7 +106,7 @@ Without `scoreboard.enabled: true`, killtop/phase lines will **not** appear on t
 
 ## Installation
 
-1. Install **Paper 1.21+**, **TAB**, and **PvPManager**. EssentialsX is optional (better vanish).
+1. Install **Paper 1.21+**, **TAB**, and **PvPManager**. Optional: **EssentialsX** (vanish), **BetterRTP** (hunt spawn dump).
 2. Enable **TAB scoreboard** (see above). Bossbar feature in TAB is optional.
 3. Build or copy `DayOfAssassins-*.jar` into `plugins/`.
 4. Start the server once so configs generate:
@@ -154,7 +157,28 @@ Stand where the FFA circle should be centered (usually middle of the cuboid):
 /preciv admin set centerspawn
 ```
 
-### 3. Schedule the event
+### 3. Mark the spawn safe zone (hunt TP lock + hunt kickoff RTP)
+
+Players standing in this cuboid when hunt **starts** are **BetterRTP**’d into the wild (once). The same zone is free from the hunt teleport lock. Joiners who log in **inside** the cuboid during live unpaused hunt are RTP’d as well.
+
+```text
+/preciv admin spawnwand
+```
+
+- **Left-click** a block → spawn **pos1**  
+- **Right-click** a block → spawn **pos2**  
+- Prefer a tall enough volume (floor + ceiling) so feet positions match the zone.
+
+Or without the wand:
+
+```text
+/preciv admin set spawnpos1
+/preciv admin set spawnpos2
+```
+
+Requires **BetterRTP** on the server for the dump itself. Without it, kickoff/join dump is skipped (event continues).
+
+### 4. Schedule the event
 
 ```text
 /preciv admin set starttime 2026/07/20 18:00:00
@@ -176,11 +200,11 @@ Optional absolute FFA override:
 /preciv admin set ffatime clear
 ```
 
-### 4. (Optional) Tune config
+### 5. (Optional) Tune config
 
-Edit `config.yml` for announce timing, FFA offset, rewards top-N, TAB lines, effects, etc. See [Configuration](#configuration).
+Edit `config.yml` for announce timing, FFA offset, spawn hunt-RTP, rewards top-N, TAB lines, effects, etc. See [Configuration](#configuration).
 
-### 5. Tell players
+### 6. Tell players
 
 ```text
 /event
@@ -204,10 +228,11 @@ Description text comes from `lang.yml`.
 
 | Command | Description |
 |---------|-------------|
-| `/preciv admin wand` | Arena selection wand |
-| `/preciv admin set pos1` / `pos2` | Cuboid corners at your feet |
+| `/preciv admin wand` | **Arena** selection wand (left = pos1, right = pos2) |
+| `/preciv admin spawnwand` | **Spawn zone** wand (left = pos1, right = pos2) — separate item from arena wand |
+| `/preciv admin set pos1` / `pos2` | Arena cuboid corners at your feet |
 | `/preciv admin set centerspawn` | FFA ring center at your location |
-| `/preciv admin set spawnpos1` / `spawnpos2` | Spawn safe-zone corners at your feet (exempt from hunt TP lock) |
+| `/preciv admin set spawnpos1` / `spawnpos2` | Spawn zone corners at your feet (TP-lock free zone + hunt RTP source) |
 | `/preciv admin set starttime <yyyy/MM/dd HH:mm:ss>` | Event start (UTC+0) |
 | `/preciv admin set endtime <yyyy/MM/dd HH:mm:ss>` | Event end (UTC+0) |
 | `/preciv admin set ffatime <…>` / `clear` | Optional FFA time override |
@@ -218,16 +243,17 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 
 | Command | Description |
 |---------|-------------|
-| `/preciv admin status` | Phase, times, flags, top killer, vanish backend, FFA eligible count |
-| `/preciv admin startnow` | Jump into hunt **live** (start ≈ now; unpauses) |
+| `/preciv admin status` | Phase, times, one-shot flags, arena + spawn zone, top killer, vanish backend, FFA eligible count |
+| `/preciv admin startnow` | Jump into hunt **live** (start ≈ now; unpauses; triggers hunt kickoff spawn RTP if configured) |
 | `/preciv admin ffanow` | Jump into FFA **live** (unpauses; next tick ring TP) |
 | `/preciv admin endnow` | Jump to ended **live** (unpauses; ceremony if needed) |
-| `/preciv admin pause` / `unpause` | Freeze / resume schedule progression |
+| `/preciv admin pause` / `unpause` | Freeze / resume schedule progression (unpause mid-hunt does **not** re-run kickoff spawn RTP) |
 | `/preciv admin set starttime …` | Absolute UTC or **`-r 1d2h`** relative from now (**pauses**) |
 | `/preciv admin phase <idle\|countdown\|hunt\|ffa\|ended>` | Time-jump helper for a target phase |
 | `/preciv admin forcetp` | Re-run FFA mass TP (must already be in FFA) |
+| `/preciv admin forcespawnrtp` | Re-run spawn-cuboid hunt BetterRTP mass dump (must be live unpaused **HUNT**) |
 | `/preciv admin forceceremony` | Re-run end ceremony (must already be ENDED) |
-| `/preciv admin resetflags` | Clear `ffa_teleported` + `ceremony_done` only |
+| `/preciv admin resetflags` | Clear `ffa_teleported` + `spawn_rtp_done` + `ceremony_done` |
 | `/preciv admin eligible` | List online FFA-eligible players (debug vanish/GM/bypass) |
 | `/preciv admin clearkills confirm` | Wipe all kill scores (requires `confirm`) |
 | `/preciv admin reload` | Reload `config.yml` + `lang.yml` + effects (does **not** reload live event times from disk) |
@@ -244,6 +270,7 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 | `preciv.killtop` | true | `/preciv killtop` |
 | `preciv.admin` | op | All admin setup + ops commands |
 | `preciv.ffa.tp.bypass` | false | Skip FFA mass teleport |
+| `preciv.spawn.rtp.bypass` | false | Skip hunt spawn-cuboid BetterRTP dump (kickoff + join) |
 | `preciv.teleport.bypass` | op | Exempt from hunt-phase teleport lock |
 
 ---
@@ -266,12 +293,16 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 | `ffa.min-air-above` | `2` | Air blocks required above spawn feet |
 | `ffa.y-search-range` | `12` | Vertical search around center Y (full cuboid height if local fails) |
 | `ffa.ring-margin-blocks` | `2` | Keep ring inside cuboid edges |
-| `arena.*` | wand/commands | World, pos1, pos2, centerspawn |
-| `spawn.*` | wand/commands | Spawn safe-zone: `world`, `pos1`, `pos2`, `configured` — exempt from hunt TP lock |
+| `arena.*` | arena wand / commands | World, pos1, pos2, centerspawn, min-vertical-span |
+| `spawn.world` / `pos1` / `pos2` / `configured` | spawn wand / commands | Spawn safe-zone cuboid (TP-lock free + hunt RTP source) |
+| `spawn.hunt-rtp.enabled` | `true` | Kickoff + join BetterRTP for players in the spawn cuboid |
+| `spawn.hunt-rtp.world` | `""` | BetterRTP destination world; empty = player’s current world |
+| `spawn.hunt-rtp.bypass-ms` | `60000` | Temporary teleport-lock allow so plugin RTP is never cancelled |
 | `teleport-lock.enabled` | `true` | Block teleport commands/plugins outside spawn+arena during hunt |
 | `teleport-lock.commands` | spawn/home/back/rtp/warp/tp… | Lowercase command labels blocked when outside the safe zones |
 | `storage.file` | `data.db` | SQLite file under plugin folder |
-| `compass.*` / `wand.*` | materials | Item materials / CMD |
+| `compass.*` / `wand.*` | materials | Arena wand item material / CMD |
+| `spawn-wand.*` | materials | Spawn zone wand item material / CMD (separate PDC from arena wand) |
 | `tab.scoreboard.offset` | `3` | First 0-based row on the **existing** TAB board for relative injects |
 | `tab.scoreboard.top-slots` | `3` | How many leaders to expose as `%top1_*` … `%topN_*` |
 | `tab.scoreboard.empty-name` / `empty-kills` | `—` / `0` | Empty rank slots |
@@ -406,6 +437,24 @@ Requires `preciv.admin`. Values always show in item lore.
 
 ---
 
+## Hunt spawn RTP (BetterRTP)
+
+Soft-depends on **BetterRTP** (reflection bind; no hard fail if missing).
+
+| Trigger | When | Who |
+|---------|------|-----|
+| **Kickoff mass dump** | Entering **HUNT** from pre-event (e.g. COUNTDOWN / grace → HUNT), **not** from PAUSED recovery or mid-hunt restart | Online players whose **feet are inside** the configured spawn cuboid |
+| **Join dump** | Player joins while phase is live **HUNT**, event **not paused**, location in spawn cuboid | That joiner only |
+| **FFA / other phases** | — | **Never** |
+
+Skipped: spectators, `preciv.spawn.rtp.bypass`, unconfigured spawn zone, BetterRTP unavailable.
+
+Plugin-initiated RTPs get a temporary teleport-lock allow (`spawn.hunt-rtp.bypass-ms`) so the dump is **not** cancelled by the hunt lock (even if BetterRTP finishes after the player leaves the cuboid).
+
+One-shot flag **`spawn_rtp_done`** (SQLite) covers the **kickoff** mass dump only. Join RTP stays open for the whole live hunt. Schedule rewrites / `resetflags` clear the flag; `/preciv admin forcespawnrtp` re-runs kickoff-style dump in live HUNT.
+
+---
+
 ## FFA teleport eligibility
 
 Teleported **once** when FFA starts if the player is:
@@ -431,22 +480,23 @@ List candidates live: `/preciv admin eligible`.
 | Data | Stored |
 |------|--------|
 | Start / end / FFA override | SQLite + mirrored in config when set by command |
-| Phase, FFA already teleported, ceremony done | SQLite |
+| Phase, FFA already teleported, spawn RTP kickoff done, ceremony done, paused | SQLite |
 | Kill counts (UUID → name, kills) | SQLite |
 | Metrics | SQLite |
 
-If the server restarts **during** countdown, hunt, or FFA, the plugin reloads phase, reschedules behavior, and re-applies UI. Mid-event online players get compasses again when appropriate.
+If the server restarts **during** countdown, hunt, or FFA, the plugin reloads phase, reschedules behavior, and re-applies UI. Mid-event online players get compasses again when appropriate. Kickoff spawn RTP does **not** re-fire on mid-hunt restart or unpause.
 
-### Why `ffa_teleported` and `ceremony_done`?
+### Why one-shot flags?
 
-Phase is recalculated from the clock every second. Entering **FFA** or **ENDED** would otherwise re-run side effects every tick (and again after a restart mid-phase):
+Phase is recalculated from the clock every second. Entering **HUNT**, **FFA**, or **ENDED** would otherwise re-run side effects every tick (and again after a restart mid-phase):
 
 | Flag | Prevents |
 |------|----------|
+| `spawn_rtp_done` | Mass spawn-cuboid BetterRTP every second / on every mid-hunt restart |
 | `ffa_teleported` | Mass ring TP every second / on every mid-FFA restart |
 | `ceremony_done` | Ceremony titles/sounds every second while ended / after restart past end |
 
-Changing start/end/FFA times clears both flags so a new schedule can fire again. Ops can also `/preciv admin resetflags`, `forcetp`, or `forceceremony`.
+Changing start/end (full schedule rewrites) clears one-shot flags so a new schedule can fire again. Ops can also `/preciv admin resetflags`, `forcespawnrtp`, `forcetp`, or `forceceremony`.
 
 ---
 
@@ -478,11 +528,14 @@ HUD `%remaining%` is **until the next phase** (not full event length). Bossbar f
 | Countdown looks like “total event left” | `%remaining%` is next-phase time; rename template (e.g. “Finale in …”) if players misread it |
 | No kills counting | Between start and end? PvPManager resolving killer? |
 | Nobody teleported at FFA | `/preciv admin eligible` — Survival + not vanished + no bypass? Arena world loaded? Centerspawn set? Dry standable ground in cuboid? |
+| Nobody dumped from spawn at hunt start | Spawn zone configured (`spawnwand` / status)? Standing **inside** cuboid? BetterRTP installed? `spawn.hunt-rtp.enabled`? Not spectator / no `preciv.spawn.rtp.bypass`? Check console for bind warnings |
+| Spawn RTP cancelled / “teleporting disabled” | Should not happen — plugin sets a temporary lock allow; update jar if you still see it |
+| Join in spawn during FFA got RTP’d | By design **no** — join RTP is **HUNT-only** |
 | FFA ring too huge with 2 players | `ffa.min-player-spacing` (default 8); diameter cap only applies when N is large |
 | Staff got FFA TP’d while vanished | Essentials installed? `/preciv admin status` vanish backend? |
 | Ceremony spam after restart | Should not happen — check `ceremony_done` in status; file a bug if unset |
 | Compass missing after death | Event still active? Inv full? Check action bar hint |
-| Need to re-test FFA/ceremony | `resetflags` + `forcetp` / `forceceremony`, or `ffanow` / `endnow` |
+| Need to re-test FFA/ceremony/spawn RTP | `resetflags` + `forcetp` / `forcespawnrtp` / `forceceremony`, or `ffanow` / `startnow` / `endnow` |
 
 ---
 
@@ -496,8 +549,8 @@ com.fusion.dev.cystol
 ├── event/                    # Timeline, scheduler, phases
 ├── compass/                  # Item, GUI (Triumph), listeners
 ├── kill/                     # KillService, dense ranking, PvPManager hook, KillCreditRules
-├── teleport/                 # TeleportLockService + listener (hunt-phase lock)
-├── arena/                    # Wand, cuboid, FFA spawn math
+├── teleport/                 # Hunt TP lock, BetterRTP soft-bind, spawn-cuboid hunt RTP
+├── arena/                    # Arena + spawn wands, cuboid, FFA spawn math
 ├── display/                  # TAB bossbar + scoreboard render
 ├── ceremony/                 # End titles / sounds / reward eligibility
 ├── fx/                       # Config-driven sounds & particles
@@ -520,4 +573,5 @@ Design notes (longer form): [`docs/DESIGN.md`](docs/DESIGN.md).
 - Built for **Pre-Civilization** event play.  
 - Depends on community plugins **TAB** (NEZNAMY) and **PvPManager** (ChanceSD).  
 - Soft vanish integration: **EssentialsX** when present.  
+- Soft hunt spawn dump: **BetterRTP** when present.  
 - GUI: Triumph GUI · Storage: SQLite (Xerial) via Paper library loader.

@@ -17,7 +17,8 @@ Package base: `com.fusion.dev.cystol.*`
 Plugin: Paper 1.21.x, Java 21, Maven  
 
 **Hard depends:** TAB, PvPManager (kill credit API)  
-**Storage:** SQLite (event state, kills, metrics)  
+**Soft depends:** EssentialsX (vanish), BetterRTP (hunt spawn-cuboid dump)  
+**Storage:** SQLite (event state, one-shot flags, kills, metrics)  
 **GUI:** Triumph GUI (shaded)  
 **Display:** TAB API (scoreboard lines + bossbar)
 
@@ -30,36 +31,38 @@ Plugin: Paper 1.21.x, Java 21, Maven
 Players hunt with a tracking compass, rack up kills, get a **one-time** teleport onto a circle/oval in the final arena for the deathmatch stretch, then the timer ends. **Most kills wins** (ties share place).
 
 ```
-ADMIN SETS TIMES + ARENA CUBOID + CENTER
+ADMIN SETS TIMES + ARENA CUBOID + CENTER + SPAWN CUBOID
         ↓
-COUNTDOWN → filling bossbar until start
+COUNTDOWN → filling bossbar until start (optional cosmetic grace window)
         ↓
-HUNT → compasses, kills count (anywhere), no TP lock
+HUNT → spawn-cuboid BetterRTP once (kickoff) + TP lock outside spawn/arena
+        → compasses, kills count (anywhere)
         ↓
 FFA ANNOUNCE → titles before finale (configurable)
         ↓
-FFA → one ring TP for eligible players; open arena (can leave)
+FFA → one ring TP for eligible players; open arena (can leave); no TP lock
         ↓
 END → freeze scores → titles + sounds for everyone → top 3 gold/silver/bronze + heroic
 ```
 
-There is **no teleport lock**, **no spawn safe zone**, **no arena reset**, **no custom death handling**, **no spectators**, **no prize hooks** (yet).
+There is **no arena reset**, **no custom death handling**, **no spectators**, **no prize hooks** (yet). Hunt **does** use a teleport lock + spawn safe zone + optional spawn-cuboid BetterRTP dump.
 
 ---
 
 ### What does an admin have to do to start?
 
 1. **Build arena** in the normal world (no plugin reset later)
-2. **Select cuboid** with wand (pos1/pos2) + **`/preciv admin set centerspawn`**
-3. **Schedule times (UTC+0)**
+2. **Select arena cuboid** with **arena wand** (pos1/pos2) + **`/preciv admin set centerspawn`**
+3. **Select spawn cuboid** with **`/preciv admin spawnwand`** (TP-lock free zone + hunt kickoff RTP source). Soft-need **BetterRTP** for the dump.
+4. **Schedule times (UTC+0)**
    ```
    /preciv admin set starttime <yyyy/mm/dd hh:mm:ss>
    /preciv admin set endtime   <yyyy/mm/dd hh:mm:ss>
    ```
    - **FFA teleport moment** = **`endtime − ffa-before-end`** (config, example **30 minutes** before end)
    - Optional: `/preciv admin set ffatime` if we keep an absolute override (must still be before end)
-4. Tune announce lead/interval in config (e.g. 60m before FFA, every 10m)
-5. **Wait** — clock + persistence do the rest (including across restarts)
+5. Tune announce lead/interval, grace, spawn hunt-RTP in config
+6. **Wait** — clock + persistence do the rest (including across restarts)
 
 ---
 
@@ -86,6 +89,9 @@ Leaving the server is fine — **still ranked** (offline kills persist; offline 
 | **TAB scoreboard** | **Inject** top-N + phase lines at configured indices/offset on the **existing** TAB board (never replace the whole board) |
 | **Compass** | Track GUI; one only; bound to inv; death: not dropped, re-given on respawn |
 | **Kills** | Via **PvPManager API**; window start→end; **persist SQLite**; no kill-message edits |
+| **Hunt TP lock** | Hunt only: block warp/home/plugin TP when **from** is outside spawn + arena |
+| **Spawn zone** | Cuboid from spawn wand; free TP while standing inside; source of hunt kickoff RTP |
+| **Hunt spawn RTP** | Once on enter HUNT: BetterRTP players **in spawn cuboid**. Join during live HUNT + in cuboid also RTP. Not FFA. Soft-depend BetterRTP |
 | **FFA announce** | Titles before FFA moment (“final deathmatch begins in …”) |
 | **FFA TP** | Once: unvanished survival, no bypass → ring sized by **player count** + diameter cap; **dry** standable Y only |
 | **Outside-cuboid nudge** | After FFA: ~1 min actionbar for players outside cuboid (configurable message) |
@@ -248,22 +254,35 @@ Offline players: still in ranking as winners/placers; titles/sounds only deliver
 
 ---
 
-## Final arena (cuboid = spawn geometry only)
+## Final arena (cuboid = FFA geometry only)
 
 ### Admin
 
 | Action | |
 |--------|--|
-| Wand / `set pos1` `set pos2` | Axis-aligned cuboid |
+| Arena wand / `set pos1` `set pos2` | Axis-aligned **arena** cuboid |
 | `set centerspawn` | Ring center (required) |
+| Spawn wand / `set spawnpos1` `spawnpos2` | Axis-aligned **spawn** cuboid (separate PDC item) |
 | No reset | Normal world forever |
 
-Cuboid is used to:
+Arena cuboid is used to:
 
 1. Compute ring/oval/multi-ring/random **spawn points** at FFA  
 2. Detect who is **outside** for the post-FFA **actionbar nudge**  
+3. (With spawn cuboid) free-zone check for hunt teleport lock  
 
-**Not used for:** kill credit, enter/leave bans, force-stay, spectators.
+**Not used for:** hunt kill credit (kills anywhere in hunt), enter/leave bans, force-stay, spectators.
+
+### Spawn cuboid + hunt BetterRTP
+
+| Concern | Behavior |
+|---------|----------|
+| Config | `spawn.world`, `pos1`, `pos2`, `configured`; `spawn.hunt-rtp.*` |
+| Kickoff | On phase enter **HUNT** from pre-event (not PAUSED recovery): one-shot BetterRTP all online players **inside** cuboid |
+| Join | Live **HUNT** only, not paused: if join location in cuboid → BetterRTP |
+| Soft API | BetterRTP `HelperRTP.tp` FORCED, ignore delay/cooldown; reflection if needed |
+| Lock | Temporary UUID allow so dump is never cancelled by hunt TP lock |
+| Flag | `spawn_rtp_done` (SQLite) for kickoff only; join path independent |
 
 ### FFA teleport — once
 
@@ -297,12 +316,13 @@ For players **outside** the cuboid when/after FFA (and still in FFA phase):
 
 | Topic | Status |
 |-------|--------|
-| Teleport lock / spawn safe zone | **Removed** — not needed |
 | Arena block reset | **Never** |
 | Custom death handling | **Never** (except compass drop suppress + respawn re-give) |
 | Kill message edits | **Never** |
-| Cuboid enter/leave kill rules | **Never** |
+| Cuboid enter/leave kill rules | **Never** (FFA kills are zone-gated separately) |
 | Spectators | **No** |
+| Whole-server hunt RTP | **No** — only players **in spawn cuboid** |
+| Join RTP during FFA | **No** — join dump is HUNT-only |
 | Prize / command hooks | **Message only** — top-N get short congrats; staff get private list; no economy/crates yet |
 
 ---
@@ -326,17 +346,19 @@ Config-driven `EffectService` — open compass, menu click/page/deny, kill credi
 
 | Data | Stored |
 |------|--------|
-| Event times / derived FFA moment / phase | Yes |
+| Event times / derived FFA moment / phase / paused | Yes |
+| One-shots: `ffa_teleported`, `spawn_rtp_done`, `ceremony_done` | Yes |
 | Kill counts (UUID → kills) | Yes |
 | Metrics (event status, aggregates) | Yes |
-| Arena pos1/pos2/center | Config and/or DB |
+| Arena / spawn cuboids + centerspawn | Config (comment-preserving YAML) |
 
 Rules:
 
 - **Events persist through restarts** in every phase (countdown, hunt, FFA)  
 - On enable: restore phase, reschedule announce/FFA/end tasks, restore UI  
-- **`ffa_teleported` / `ceremony_done`:** one-shot flags so FFA TP and ceremony do not re-fire every tick or after mid-phase restart  
-- Vanish: Essentials preferred soft-dep; metadata fallback only when Essentials absent
+- **One-shot flags:** FFA TP, hunt spawn kickoff RTP, and ceremony do not re-fire every tick or after mid-phase restart  
+- Vanish: Essentials preferred soft-dep; metadata fallback only when Essentials absent  
+- Hunt spawn RTP: BetterRTP soft-dep; skip dump if unbound  
 - Config **read/write protected** (single writer / sync) and **performant** (cache in memory; flush async or batched)  
 - Kill increments: memory + durable write (async queue OK if consistent on crash window is acceptable — prefer safe flush on kill and on disable)
 
@@ -353,17 +375,19 @@ Rules:
 | `/preciv admin set endtime <yyyy/mm/dd hh:mm:ss>` | End (UTC+0); FFA = end − config offset |
 | `/preciv admin set ffatime <…>` | Optional absolute FFA override (if kept) |
 | `/preciv admin set centerspawn` | Ring center |
-| `/preciv admin wand` | Selection wand |
-| `/preciv admin set pos1` / `pos2` | Cuboid corners |
-| `/preciv admin status` | Phase, times, flags, vanish backend, eligible count |
+| `/preciv admin wand` | **Arena** selection wand |
+| `/preciv admin spawnwand` | **Spawn zone** selection wand (separate item) |
+| `/preciv admin set pos1` / `pos2` | Arena cuboid corners |
+| `/preciv admin set spawnpos1` / `spawnpos2` | Spawn cuboid corners |
+| `/preciv admin status` | Phase, times, flags, arena + spawn, vanish backend, eligible count |
 | `/preciv admin startnow` / `ffanow` / `endnow` | Time-jumps (phase stays clock-derived) |
 | `/preciv admin phase <…>` | Time-jump helper to a named phase |
-| `/preciv admin forcetp` / `forceceremony` / `resetflags` | Re-arm / re-run one-shots |
+| `/preciv admin forcetp` / `forcespawnrtp` / `forceceremony` / `resetflags` | Re-arm / re-run one-shots |
 | `/preciv admin eligible` | List FFA TP candidates |
 | `/preciv admin clearkills confirm` | Wipe kill table |
 | `/preciv admin reload` | Config + lang + effects (not live event times) |
 
-### Permissions (draft)
+### Permissions
 
 | Permission | Default | Purpose |
 |------------|---------|---------|
@@ -372,18 +396,21 @@ Rules:
 | `preciv.killtop` | true | killtop |
 | `preciv.admin` | op | Admin setup |
 | `preciv.ffa.tp.bypass` | false | Skip FFA mass teleport |
+| `preciv.spawn.rtp.bypass` | false | Skip hunt spawn-cuboid BetterRTP |
+| `preciv.teleport.bypass` | op | Exempt from hunt teleport lock |
 
 ---
 
 ## Dependencies
 
 ```yaml
-# plugin.yml
-depend: [TAB, PvPManager]   # exact PvPManager plugin name as installed
+# paper-plugin.yml (server deps)
+# hard: TAB, PvPManager
+# soft: Essentials, BetterRTP
 ```
 
 - Triumph GUI: shaded + relocated  
-- SQLite: JDBC driver shaded or Paper-friendly embedded  
+- SQLite: Paper library loader (not shaded)
 
 ---
 
@@ -412,6 +439,20 @@ arena:
   pos1: { x: 0, y: 64, z: 0 }
   pos2: { x: 100, y: 80, z: 100 }
   centerspawn: { x: 50.5, y: 65.0, z: 50.5, yaw: 0.0, pitch: 0.0 }
+
+spawn:
+  configured: false
+  world: world
+  pos1: { x: 0, y: 64, z: 0 }
+  pos2: { x: 0, y: 64, z: 0 }
+  hunt-rtp:
+    enabled: true
+    world: ""           # BetterRTP dest; empty = player world
+    bypass-ms: 60000    # temp TP-lock allow for plugin RTP
+
+teleport-lock:
+  enabled: true
+  commands: [spawn, home, back, rtp, warp, tp]  # see shipped config for full list
 
 storage:
   type: sqlite
