@@ -21,12 +21,23 @@ public final class DayOfAssassinsLoader implements PluginLoader {
     public void classloader(@NotNull PluginClasspathBuilder classpathBuilder) {
         MavenLibraryResolver resolver = new MavenLibraryResolver();
         resolver.addDependency(new Dependency(new DefaultArtifact(SQLITE), null));
-        // Paper's Maven Central mirror (do not hit Central CDN directly)
+        // Prefer Paper's Maven Central mirror when the constant exists (newer Paper).
+        // Older 1.21.x builds lack MAVEN_CENTRAL_DEFAULT_MIRROR — fall back to Central.
         resolver.addRepository(new RemoteRepository.Builder(
                 "maven-central",
                 "default",
-                MavenLibraryResolver.MAVEN_CENTRAL_DEFAULT_MIRROR
+                mavenCentralUrl()
         ).build());
         classpathBuilder.addLibrary(resolver);
+    }
+
+    private static String mavenCentralUrl() {
+        try {
+            return (String) MavenLibraryResolver.class
+                    .getField("MAVEN_CENTRAL_DEFAULT_MIRROR")
+                    .get(null);
+        } catch (ReflectiveOperationException ignored) {
+            return "https://repo.maven.apache.org/maven2/";
+        }
     }
 }

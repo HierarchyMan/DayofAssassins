@@ -164,6 +164,8 @@ admin:
     flags: "&7One-shots: &ffinale TP done=%ffa_teleported% &7| &fceremony done=%ceremony_done%"
     kills: "&7Kill rows: &f%rows% &7| Leader: &f%top_killer% &8(%top_kills%)"
     arena: "&7Arena: &f%world% &8| &7%cuboid% &8| center &f%center%"
+    # Shown when pos1/pos2 share the same Y — FFA auto-expands height at runtime
+    arena-flat-y: "&eArena corners are coplanar (Y≈%raw_y%). FFA uses a ± half of %span% block vertical pad so standable spawns work. Prefer different Y on pos1/pos2 (floor + ceiling)."
     vanish: "&7Vanish check: &f%backend%"
     eligible: "&7Finale TP candidates online: &f%count%"
   startnow-ok: "&aEvent started now (&f%time%&a). Stage: &f%phase%"

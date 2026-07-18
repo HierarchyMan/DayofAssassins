@@ -53,6 +53,15 @@ public final class PvpManagerKillListener implements Listener {
         hookPvpManager();
     }
 
+    /**
+     * Main plugin class names across PvPManager 3.x packaging.
+     * 3.19.x ships {@code me.NoChance.PvPManager.PvPManager}; some forks use chancesd package.
+     */
+    private static final String[] PVP_MANAGER_MAIN_CLASSES = {
+            "me.NoChance.PvPManager.PvPManager",
+            "me.chancesd.pvpmanager.PvPManager"
+    };
+
     private void hookPvpManager() {
         Plugin plugin = Bukkit.getPluginManager().getPlugin("PvPManager");
         if (plugin == null || !plugin.isEnabled()) {
@@ -60,15 +69,12 @@ public final class PvpManagerKillListener implements Listener {
             return;
         }
         try {
-            // me.chancesd.pvpmanager.PvPManager.getInstance() or JavaPlugin cast
-            Class<?> pmClass = Class.forName("me.chancesd.pvpmanager.PvPManager");
-            Method getInstance = null;
-            try {
-                getInstance = pmClass.getMethod("getInstance");
-            } catch (NoSuchMethodException ignored) {
+            Object pm = resolvePvpManagerInstance(plugin);
+            if (pm == null) {
+                logger.warning("PvPManager plugin present but main class not resolved; Bukkit killer fallback.");
+                return;
             }
-            Object pm = getInstance != null ? getInstance.invoke(null) : plugin;
-            // PlayerHandler
+            // PlayerHandler / PlayerManager
             Method getPlayerHandler = null;
             for (String name : new String[]{"getPlayerHandler", "getPlayerManager"}) {
                 try {
@@ -78,15 +84,11 @@ public final class PvpManagerKillListener implements Listener {
                 }
             }
             if (getPlayerHandler == null) {
-                // try PvPManager API facade
-                try {
-                    Class<?> api = Class.forName("me.chancesd.pvpmanager.api.PvPManagerAPI");
-                    // static access may vary by version
-                    logger.info("PvPManager present; using death killer with combat metadata fallback.");
-                } catch (ClassNotFoundException ignored) {
-                }
+                // Keep instance for any future probes; killer still falls back to Bukkit.
                 this.pvpManager = pm;
                 this.pvpManagerReady = true;
+                logger.info("PvPManager hooked (" + pm.getClass().getName()
+                        + ") without player handler — Bukkit killer when enemy resolve fails.");
                 return;
             }
             Object handler = getPlayerHandler.invoke(pm);
@@ -96,11 +98,42 @@ public final class PvpManagerKillListener implements Listener {
             }
             this.pvpManager = handler;
             this.pvpManagerReady = true;
-            logger.info("Hooked PvPManager player handler for kill credit.");
+            logger.info("Hooked PvPManager player handler for kill credit ("
+                    + pm.getClass().getName() + ").");
         } catch (Exception e) {
             logger.log(Level.WARNING, "PvPManager hook failed; using Bukkit killer fallback", e);
             pvpManagerReady = false;
         }
+    }
+
+    /**
+     * Prefer {@code getInstance()} on known main classes, then the Bukkit plugin instance itself.
+     */
+    private static Object resolvePvpManagerInstance(Plugin plugin) {
+        ClassLoader cl = plugin.getClass().getClassLoader();
+        for (String className : PVP_MANAGER_MAIN_CLASSES) {
+            try {
+                Class<?> pmClass = Class.forName(className, true, cl);
+                try {
+                    Method getInstance = pmClass.getMethod("getInstance");
+                    Object inst = getInstance.invoke(null);
+                    if (inst != null) {
+                        return inst;
+                    }
+                } catch (NoSuchMethodException ignored) {
+                    // fall through to assignable plugin instance
+                }
+                if (pmClass.isInstance(plugin)) {
+                    return plugin;
+                }
+            } catch (ClassNotFoundException ignored) {
+                // try next packaging
+            } catch (ReflectiveOperationException ignored) {
+                // try next packaging
+            }
+        }
+        // Last resort: the JavaPlugin instance (works if methods live on the plugin class).
+        return plugin;
     }
 
     private static Method findMethod(Class<?> type, String name, Class<?>... params) {

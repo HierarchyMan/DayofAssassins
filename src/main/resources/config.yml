@@ -36,6 +36,9 @@ ffa:
 
 arena:
   world: world
+  # When pos1/pos2 share the same Y (both corners on the floor), FFA expands to this
+  # vertical span (blocks) so standable Y search is not empty. Prefer real floor+ceiling corners.
+  min-vertical-span: 24
   pos1:
     x: 0
     y: 64
@@ -108,6 +111,7 @@ wand:
 tab:
   scoreboard:
     # Inject into the existing TAB board (never replaces it).
+    # REQUIRES plugins/TAB/config.yml → scoreboard.enabled: true and a board with enough lines.
     # Relative lines start at this 0-based index; absolute "line:" keys still override.
     offset: 3
     # How many ranked slots to fill as %top1_name%/%top1_kills% … %topN_*
@@ -125,6 +129,8 @@ tab:
       # %phase% = friendly stage label; %remaining% = time until next stage
       - "&7%phase% &8· next &f%remaining%"
   bossbar:
+    # This plugin's event bar. Prefers TAB BossBarManager when TAB bossbar.enabled is true;
+    # otherwise uses Paper/Bukkit BossBar (no need to enable TAB's own bossbar feature).
     enabled: true
     color: RED
     style: PROGRESS

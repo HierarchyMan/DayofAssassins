@@ -18,21 +18,26 @@ import me.neznamy.tab.api.scoreboard.Line;
 import me.neznamy.tab.api.scoreboard.Scoreboard;
 import me.neznamy.tab.api.scoreboard.ScoreboardManager;
 import org.bukkit.Bukkit;
+import org.bukkit.boss.BarFlag;
 import org.bukkit.entity.Player;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * TAB hard-depend display: event bossbar (added alongside any existing TAB bars) +
- * scoreboard <em>line injection</em> at configured indices on the existing board.
+ * TAB hard-depend for scoreboard line injection; event bossbar prefers TAB when its
+ * bossbar feature is loaded, otherwise uses Paper's built-in {@link org.bukkit.boss.BossBar}
+ * (server API — not shaded; available on every Paper runtime).
  *
  * <p>Does <strong>not</strong> call {@code showScoreboard} — that would replace the player's
  * normal TAB layout. Instead each configured row is written via {@link Line#setText(String)}
@@ -42,13 +47,24 @@ public final class TabDisplayService {
 
     private static final String BOSSBAR_TITLE_SEED = "Day of Assassins";
 
+    /** Which transport owns the live event bossbar. */
+    private enum BossBackend {
+        NONE,
+        TAB,
+        PAPER
+    }
+
     private final EventManager eventManager;
     private final KillService killService;
     private final PluginConfig config;
     private final Lang lang;
     private final Logger logger;
 
-    private BossBar bossBar;
+    private BossBackend bossBackend = BossBackend.NONE;
+    /** TAB API bar (only when {@link BossBackend#TAB}). */
+    private BossBar tabBossBar;
+    /** Paper/Bukkit bar (only when {@link BossBackend#PAPER}). Progress is 0.0–1.0. */
+    private org.bukkit.boss.BossBar paperBossBar;
     private boolean available = true;
     private boolean active;
 
@@ -85,34 +101,44 @@ public final class TabDisplayService {
             if (api == null) {
                 available = false;
                 logger.severe("TAB API instance is null");
+                // Still try Paper bossbar — event UI should not die solely on TAB absence here
+                // (hard-depend usually prevents this path; defensive for partial loads).
+                if (config.tabBossbarEnabled()) {
+                    ensurePaperBossBar();
+                }
                 return;
             }
-            // Bossbar + scoreboard managers may be null independently if that feature is off in TAB.
+            // Scoreboard manager may be null if that TAB feature is off.
             ensureBossBar(api);
             if (api.getScoreboardManager() == null) {
                 logger.warning("TAB ScoreboardManager is null — scoreboard line inject disabled "
                         + "(enable scoreboard feature in TAB config)");
             }
-            if (config.tabBossbarEnabled() && api.getBossBarManager() == null) {
-                logger.warning("TAB BossBarManager is null — event bossbar disabled "
-                        + "(enable bossbar feature in TAB config)");
+            if (config.tabBossbarEnabled() && bossBackend == BossBackend.NONE) {
+                logger.warning("Event bossbar failed to create on TAB and Paper backends");
+            } else if (config.tabBossbarEnabled() && bossBackend == BossBackend.PAPER) {
+                logger.info("Event bossbar using Paper/Bukkit API "
+                        + "(TAB BossBarManager unavailable — bossbar feature likely off in TAB config)");
             }
         } catch (Throwable t) {
             available = false;
             logger.log(Level.SEVERE, "Failed to init TAB display", t);
+            if (config.tabBossbarEnabled()) {
+                try {
+                    ensurePaperBossBar();
+                } catch (Throwable ignored) {
+                    // already logged in ensure
+                }
+            }
         }
     }
 
     public void update(Instant now) {
-        if (!available) {
+        // Bossbar can run on Paper even if TAB scoreboard path is down; scoreboard still needs TAB.
+        if (!available && bossBackend == BossBackend.NONE && !config.tabBossbarEnabled()) {
             return;
         }
         try {
-            TabAPI api = TabAPI.getInstance();
-            if (api == null) {
-                return;
-            }
-
             EventTimeline timeline = eventManager.timeline();
             EventPhase phase = timeline.phaseAt(now);
             int topSlots = config.scoreboardTopSlots();
@@ -135,71 +161,125 @@ public final class TabDisplayService {
             );
 
             active = true;
-            updateBossBar(api, bar);
-            updateScoreboardInject(api, phase, timeline, now, topRanking, topSlots);
+            updateBossBar(bar);
+            if (available) {
+                TabAPI api = TabAPI.getInstance();
+                if (api != null) {
+                    updateScoreboardInject(api, phase, timeline, now, topRanking, topSlots);
+                }
+            }
         } catch (Throwable t) {
-            logger.log(Level.FINE, "TAB update failed", t);
+            logger.log(Level.FINE, "display update failed", t);
         }
     }
 
-    private void updateBossBar(TabAPI api, EventDisplayRenderer.BossBarView bar) {
+    private void updateBossBar(EventDisplayRenderer.BossBarView bar) {
         if (!config.tabBossbarEnabled()) {
             return;
         }
-        ensureBossBar(api);
-        if (bossBar == null) {
+        ensureBossBar(TabAPI.getInstance());
+        if (bossBackend == BossBackend.NONE) {
             long nowMs = System.currentTimeMillis();
             if (nowMs - lastBossMissingLogMs > 60_000L) {
                 lastBossMissingLogMs = nowMs;
-                logger.warning("Event bossbar missing after ensure (is TAB bossbar feature enabled?)");
+                logger.warning("Event bossbar missing after ensure (TAB and Paper backends failed)");
             }
             return;
         }
         try {
             String title = EventDisplayRenderer.colorAmpersandToSection(bar.titleLegacyAmpersand());
-            // TAB bossbar progress is 0–100 (client receives value/100).
-            float progressPercent = EventDisplayRenderer.progressPercent(bar.progress());
-            if (!title.equals(lastBossTitle)) {
-                bossBar.setTitle(title);
-                lastBossTitle = title;
-            }
-            if (Float.isNaN(lastBossProgress) || Math.abs(progressPercent - lastBossProgress) > 0.05f) {
-                bossBar.setProgress(progressPercent);
-                lastBossProgress = progressPercent;
-            }
-            // Only walk online players when count changes or bar has no viewers (cheap join path).
-            // Full re-scan if empty so TAB strip/recover still works without O(n) every second
-            // when everyone is already on the bar.
-            int online = Bukkit.getOnlinePlayers().size();
-            int viewers;
-            try {
-                viewers = bossBar.getPlayers().size();
-            } catch (Throwable t) {
-                viewers = -1;
-            }
-            boolean needScan = viewers == 0 || viewers != online || online != lastBossViewerScanSize;
-            if (needScan) {
-                lastBossViewerScanSize = online;
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    TabPlayer tp = api.getPlayer(p.getUniqueId());
-                    if (tp == null) {
-                        continue;
-                    }
-                    try {
-                        if (!bossBar.containsPlayer(tp)) {
-                            bossBar.addPlayer(tp);
-                        }
-                    } catch (Throwable addEx) {
-                        logger.log(Level.FINE, "bossbar addPlayer failed for " + p.getName(), addEx);
-                    }
-                }
+            if (bossBackend == BossBackend.TAB) {
+                updateTabBossBar(title, bar.progress());
+            } else {
+                updatePaperBossBar(title, bar.progress());
             }
         } catch (Throwable t) {
             logger.log(Level.WARNING, "bossbar update failed — recreating", t);
-            bossBar = null;
+            destroyBossBars();
             lastBossTitle = null;
             lastBossProgress = Float.NaN;
             lastBossViewerScanSize = -1;
+        }
+    }
+
+    private void updateTabBossBar(String titleSection, float progress01) {
+        if (tabBossBar == null) {
+            return;
+        }
+        TabAPI api = TabAPI.getInstance();
+        // TAB bossbar progress is 0–100 (client receives value/100).
+        float progressPercent = EventDisplayRenderer.progressPercent(progress01);
+        if (!titleSection.equals(lastBossTitle)) {
+            tabBossBar.setTitle(titleSection);
+            lastBossTitle = titleSection;
+        }
+        if (Float.isNaN(lastBossProgress) || Math.abs(progressPercent - lastBossProgress) > 0.05f) {
+            tabBossBar.setProgress(progressPercent);
+            lastBossProgress = progressPercent;
+        }
+        int online = Bukkit.getOnlinePlayers().size();
+        int viewers;
+        try {
+            viewers = tabBossBar.getPlayers().size();
+        } catch (Throwable t) {
+            viewers = -1;
+        }
+        boolean needScan = viewers == 0 || viewers != online || online != lastBossViewerScanSize;
+        if (!needScan) {
+            return;
+        }
+        lastBossViewerScanSize = online;
+        if (api == null) {
+            return;
+        }
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            TabPlayer tp = api.getPlayer(p.getUniqueId());
+            if (tp == null) {
+                continue;
+            }
+            try {
+                if (!tabBossBar.containsPlayer(tp)) {
+                    tabBossBar.addPlayer(tp);
+                }
+            } catch (Throwable addEx) {
+                logger.log(Level.FINE, "TAB bossbar addPlayer failed for " + p.getName(), addEx);
+            }
+        }
+    }
+
+    private void updatePaperBossBar(String titleSection, float progress01) {
+        if (paperBossBar == null) {
+            return;
+        }
+        // Bukkit bossbar progress is 0.0–1.0.
+        float progress = Math.max(0f, Math.min(1f, progress01));
+        if (!titleSection.equals(lastBossTitle)) {
+            paperBossBar.setTitle(titleSection);
+            lastBossTitle = titleSection;
+        }
+        if (Float.isNaN(lastBossProgress) || Math.abs(progress - lastBossProgress) > 0.0005f) {
+            paperBossBar.setProgress(progress);
+            lastBossProgress = progress;
+        }
+        paperBossBar.setVisible(true);
+        int online = Bukkit.getOnlinePlayers().size();
+        int viewers = paperBossBar.getPlayers().size();
+        boolean needScan = viewers == 0 || viewers != online || online != lastBossViewerScanSize;
+        if (!needScan) {
+            return;
+        }
+        lastBossViewerScanSize = online;
+        Set<UUID> want = new HashSet<>();
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            want.add(p.getUniqueId());
+            if (!paperBossBar.getPlayers().contains(p)) {
+                paperBossBar.addPlayer(p);
+            }
+        }
+        for (Player p : new ArrayList<>(paperBossBar.getPlayers())) {
+            if (!want.contains(p.getUniqueId())) {
+                paperBossBar.removePlayer(p);
+            }
         }
     }
 
@@ -388,26 +468,57 @@ public final class TabDisplayService {
     }
 
     /**
-     * Create our event bossbar if missing. Safe when TAB already has other bars — API bars stack
-     * via {@link BossBar#addPlayer}; they are not a replace of config bars.
+     * Create event bossbar if missing. Prefers TAB (stacks with existing TAB bars) when
+     * {@link BossBarManager} is loaded; otherwise Paper/Bukkit {@link org.bukkit.boss.BossBar}.
      */
     private void ensureBossBar(TabAPI api) {
-        if (bossBar != null || !config.tabBossbarEnabled()) {
+        if (bossBackend != BossBackend.NONE || !config.tabBossbarEnabled()) {
             return;
         }
-        BossBarManager bbm = api.getBossBarManager();
-        if (bbm == null) {
+        if (api != null) {
+            BossBarManager bbm = api.getBossBarManager();
+            if (bbm != null) {
+                try {
+                    tabBossBar = createEventBossBar(bbm);
+                    bossBackend = BossBackend.TAB;
+                    lastBossTitle = null;
+                    lastBossProgress = Float.NaN;
+                    logger.info("Created Day of Assassins TAB bossbar (stacks with existing bars)");
+                    return;
+                } catch (Throwable t) {
+                    logger.log(Level.WARNING, "Failed to create TAB bossbar — trying Paper", t);
+                    tabBossBar = null;
+                }
+            }
+        }
+        ensurePaperBossBar();
+    }
+
+    private void ensurePaperBossBar() {
+        if (bossBackend != BossBackend.NONE || !config.tabBossbarEnabled()) {
             return;
         }
         try {
-            // Prefer a stable name when possible (older API variants); fall back to title+progress form.
-            bossBar = createEventBossBar(bbm);
+            // Paper ships org.bukkit.boss.BossBar — no third-party shade required.
+            paperBossBar = Bukkit.createBossBar(
+                    BOSSBAR_TITLE_SEED,
+                    org.bukkit.boss.BarColor.RED,
+                    org.bukkit.boss.BarStyle.SOLID
+            );
+            paperBossBar.setProgress(0.0);
+            paperBossBar.setVisible(true);
+            // Keep fog/sky clean — event bar is informational only.
+            paperBossBar.removeFlag(BarFlag.CREATE_FOG);
+            paperBossBar.removeFlag(BarFlag.DARKEN_SKY);
+            paperBossBar.removeFlag(BarFlag.PLAY_BOSS_MUSIC);
+            bossBackend = BossBackend.PAPER;
             lastBossTitle = null;
             lastBossProgress = Float.NaN;
-            logger.info("Created Day of Assassins TAB bossbar (stacks with existing bars)");
+            logger.info("Created Day of Assassins Paper/Bukkit bossbar (TAB bossbar feature not required)");
         } catch (Throwable t) {
-            logger.log(Level.WARNING, "Failed to create TAB bossbar", t);
-            bossBar = null;
+            logger.log(Level.WARNING, "Failed to create Paper bossbar", t);
+            paperBossBar = null;
+            bossBackend = BossBackend.NONE;
         }
     }
 
@@ -417,13 +528,34 @@ public final class TabDisplayService {
         return bbm.createBossBar(BOSSBAR_TITLE_SEED, 0f, BarColor.RED, BarStyle.PROGRESS);
     }
 
+    private void destroyBossBars() {
+        hideBossBarFromEveryone();
+        if (paperBossBar != null) {
+            try {
+                paperBossBar.setVisible(false);
+                paperBossBar.removeAll();
+            } catch (Throwable ignored) {
+                // best-effort
+            }
+            paperBossBar = null;
+        }
+        tabBossBar = null;
+        bossBackend = BossBackend.NONE;
+    }
+
     public void clear() {
         // Cheap no-op when already idle — tick must not pay restore/hide cost every second.
         if (!active && savedScoreboardLines.isEmpty()) {
             boolean barHasViewers = false;
-            if (bossBar != null) {
+            if (bossBackend == BossBackend.TAB && tabBossBar != null) {
                 try {
-                    barHasViewers = !bossBar.getPlayers().isEmpty();
+                    barHasViewers = !tabBossBar.getPlayers().isEmpty();
+                } catch (Throwable ignored) {
+                    barHasViewers = false;
+                }
+            } else if (bossBackend == BossBackend.PAPER && paperBossBar != null) {
+                try {
+                    barHasViewers = !paperBossBar.getPlayers().isEmpty();
                 } catch (Throwable ignored) {
                     barHasViewers = false;
                 }
@@ -437,36 +569,43 @@ public final class TabDisplayService {
         lastBossProgress = Float.NaN;
         lastScoreboardFingerprint = null;
         lastBossViewerScanSize = -1;
-        if (!available) {
-            savedScoreboardLines.clear();
-            return;
-        }
 
         try {
-            TabAPI api = TabAPI.getInstance();
             hideBossBarFromEveryone();
-            restoreScoreboardLines(api);
+            if (available) {
+                restoreScoreboardLines(TabAPI.getInstance());
+            } else {
+                savedScoreboardLines.clear();
+            }
         } catch (Throwable t) {
-            logger.log(Level.FINE, "TAB clear failed", t);
+            logger.log(Level.FINE, "display clear failed", t);
             savedScoreboardLines.clear();
         }
     }
 
-    /** Pull the event bar from all viewers without destroying the TAB registration. */
+    /** Pull the event bar from all viewers without destroying the bar registration. */
     private void hideBossBarFromEveryone() {
-        if (bossBar == null) {
+        if (bossBackend == BossBackend.TAB && tabBossBar != null) {
+            try {
+                for (TabPlayer tp : new ArrayList<>(tabBossBar.getPlayers())) {
+                    try {
+                        tabBossBar.removePlayer(tp);
+                    } catch (Throwable ignored) {
+                        // continue others
+                    }
+                }
+            } catch (Throwable t) {
+                logger.log(Level.FINE, "TAB bossbar hide failed", t);
+            }
             return;
         }
-        try {
-            for (TabPlayer tp : new ArrayList<>(bossBar.getPlayers())) {
-                try {
-                    bossBar.removePlayer(tp);
-                } catch (Throwable ignored) {
-                    // continue others
-                }
+        if (bossBackend == BossBackend.PAPER && paperBossBar != null) {
+            try {
+                paperBossBar.removeAll();
+                paperBossBar.setVisible(false);
+            } catch (Throwable t) {
+                logger.log(Level.FINE, "Paper bossbar hide failed", t);
             }
-        } catch (Throwable t) {
-            logger.log(Level.FINE, "bossbar hide failed", t);
         }
     }
 
@@ -548,9 +687,19 @@ public final class TabDisplayService {
         savedScoreboardLines.clear();
     }
 
-    /** Drop per-player state on quit (injects are board-level; nothing required). */
+    /** Drop per-player state on quit (injects are board-level; Paper bar cleaned on next scan). */
     public void onPlayerQuit(java.util.UUID uuid) {
-        // Bossbar: TAB removes quit players itself. No scoreboard force-show tracking anymore.
+        if (uuid == null || paperBossBar == null) {
+            return;
+        }
+        Player p = Bukkit.getPlayer(uuid);
+        if (p != null) {
+            try {
+                paperBossBar.removePlayer(p);
+            } catch (Throwable ignored) {
+                // ignore
+            }
+        }
     }
 
     /** Test/diag: whether TAB API was reachable at init. */
@@ -559,7 +708,12 @@ public final class TabDisplayService {
     }
 
     public boolean hasBossBar() {
-        return bossBar != null;
+        return bossBackend != BossBackend.NONE;
+    }
+
+    /** {@code TAB}, {@code PAPER}, or {@code NONE} — for diagnostics / tests. */
+    public String bossBackendName() {
+        return bossBackend.name();
     }
 
     /** True when scoreboard inject is possible (manager present + lines configured). */

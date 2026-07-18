@@ -151,6 +151,11 @@ public final class PluginConfig {
         return cfg().getString("arena.world", "world");
     }
 
+    /**
+     * Arena cuboid for FFA standable search, kill-zone (FFA), and outside-nudge.
+     * When both corners share the same Y (common wand mistake), expands vertical span so
+     * standable Y search is not empty — see {@link #arenaMinVerticalSpan()}.
+     */
     public CuboidBounds arenaCuboid() {
         ConfigurationSection p1 = cfg().getConfigurationSection("arena.pos1");
         ConfigurationSection p2 = cfg().getConfigurationSection("arena.pos2");
@@ -160,7 +165,36 @@ public final class PluginConfig {
         double x2 = p2 != null ? p2.getDouble("x") : 100;
         double y2 = p2 != null ? p2.getDouble("y") : 80;
         double z2 = p2 != null ? p2.getDouble("z") : 100;
+        CuboidBounds raw = new CuboidBounds(x1, y1, z1, x2, y2, z2);
+        return raw.withMinimumHeight(arenaMinVerticalSpan());
+    }
+
+    /**
+     * Raw cuboid from config without flat-Y expansion (diagnostics / status).
+     */
+    public CuboidBounds arenaCuboidRaw() {
+        ConfigurationSection p1 = cfg().getConfigurationSection("arena.pos1");
+        ConfigurationSection p2 = cfg().getConfigurationSection("arena.pos2");
+        double x1 = p1 != null ? p1.getDouble("x") : 0;
+        double y1 = p1 != null ? p1.getDouble("y") : 64;
+        double z1 = p1 != null ? p1.getDouble("z") : 0;
+        double x2 = p2 != null ? p2.getDouble("x") : 100;
+        double y2 = p2 != null ? p2.getDouble("y") : 80;
+        double z2 = p2 != null ? p2.getDouble("z") : 100;
         return new CuboidBounds(x1, y1, z1, x2, y2, z2);
+    }
+
+    /**
+     * Minimum vertical span applied when pos1/pos2 are coplanar.
+     * Default 24 ≈ pad below floor + air for {@code min-air-above} + y search.
+     */
+    public double arenaMinVerticalSpan() {
+        return Math.max(4.0, cfg().getDouble("arena.min-vertical-span", 24.0));
+    }
+
+    /** True when stored pos1/pos2 Y are effectively the same (before auto-expand). */
+    public boolean arenaStoredFlat() {
+        return arenaCuboidRaw().isVerticallyFlat(0.5);
     }
 
     public double centerX() {

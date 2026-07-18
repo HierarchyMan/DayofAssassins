@@ -79,22 +79,38 @@ Build arena in-world
 |-------------|--------|
 | **Paper 1.21+** | Not Spigot/Bukkit — Paper plugin loader only |
 | **Java 21** | Matches Paper 1.21 toolchains |
-| **[TAB](https://github.com/NEZNAMY/TAB)** | Hard depend — bossbar + scoreboard API |
-| **[PvPManager](https://github.com/ChanceSD/PvPManager)** | Hard depend — kill credit (combat/killer resolution) |
+| **[TAB](https://github.com/NEZNAMY/TAB)** | Hard depend — **scoreboard inject** needs TAB scoreboard feature on; event bossbar uses TAB when available, else **Paper/Bukkit** |
+| **[PvPManager](https://github.com/ChanceSD/PvPManager)** | Hard depend — kill credit (combat enemy API; Bukkit killer fallback) |
 | **Essentials / EssentialsX** | Soft depend — preferred vanish backend if present |
 | **Network (first boot)** | Paper downloads `sqlite-jdbc` via the plugin loader (then cached) |
+
+### TAB config (required for scoreboard lines)
+
+In `plugins/TAB/config.yml`:
+
+```yaml
+scoreboard:
+  enabled: true   # REQUIRED — injects event lines into the existing board
+  # Keep a default scoreboard with enough lines for offset + inject rows (see config.yml)
+
+bossbar:
+  enabled: false  # optional — if false, Day of Assassins still shows its bar via Paper/Bukkit
+```
+
+Without `scoreboard.enabled: true`, killtop/phase lines will **not** appear on the sidebar (bossbar still works).
 
 ---
 
 ## Installation
 
 1. Install **Paper 1.21+**, **TAB**, and **PvPManager**. EssentialsX is optional (better vanish).
-2. Build or copy `DayOfAssassins-*.jar` into `plugins/`.
-3. Start the server once so configs generate:
+2. Enable **TAB scoreboard** (see above). Bossbar feature in TAB is optional.
+3. Build or copy `DayOfAssassins-*.jar` into `plugins/`.
+4. Start the server once so configs generate:
    - `plugins/DayOfAssassins/config.yml`
    - `plugins/DayOfAssassins/lang.yml`
    - `plugins/DayOfAssassins/data.db` (SQLite)
-4. Stop or leave running; configure (below), then schedule the event.
+5. Stop or leave running; configure (below), then schedule the event.
 
 ### Build from source
 
@@ -120,7 +136,8 @@ Stand in the world where the deathmatch should happen:
 
 - **Left-click** a block → **pos1**  
 - **Right-click** a block → **pos2**  
-- Cuboid is used for **spawn geometry** and the “outside arena” action bar — **not** a kill boundary.
+- Cuboid is used for **spawn geometry** and the “outside arena” action bar — **not** a hunt kill boundary (FFA kills are cuboid-gated).
+- Prefer **different Y** values (floor corner + higher corner/ceiling). If both corners share the same Y, the plugin auto-expands vertical span (`arena.min-vertical-span`, default 24) so FFA standable search still works.
 
 Or without the wand:
 

@@ -116,6 +116,13 @@ public final class AdminOps {
                 "cuboid", formatCuboid(cuboid),
                 "center", centerLooksSet ? "set" : "default?"
         )));
+        if (config.arenaStoredFlat()) {
+            CuboidBounds raw = config.arenaCuboidRaw();
+            sender.sendMessage(lang.msg("admin.status.arena-flat-y", Map.of(
+                    "raw_y", String.format(Locale.ROOT, "%.1f", raw.minY()),
+                    "span", String.format(Locale.ROOT, "%.0f", config.arenaMinVerticalSpan())
+            )));
+        }
         sender.sendMessage(lang.msg("admin.status.vanish", Map.of(
                 "backend", vanishService.backendLabel()
         )));
