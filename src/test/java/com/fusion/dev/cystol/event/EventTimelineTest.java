@@ -74,6 +74,40 @@ class EventTimelineTest {
     }
 
     @Test
+    void cosmeticGraceWindowDoesNotChangePhase() {
+        Instant start = Instant.parse("2026-01-01T12:00:00Z");
+        Instant end = Instant.parse("2026-01-01T14:00:00Z");
+        EventTimeline t = new EventTimeline(start, end, null, 1800);
+        long grace = 600; // 10m
+
+        // Far before grace
+        Instant early = Instant.parse("2026-01-01T11:00:00Z");
+        assertEquals(EventPhase.COUNTDOWN, t.phaseAt(early));
+        assertFalse(t.inGraceWindow(early, true, grace));
+
+        // Exactly at grace open (start − 600s)
+        Instant graceOpen = start.minusSeconds(grace);
+        assertEquals(EventPhase.COUNTDOWN, t.phaseAt(graceOpen));
+        assertTrue(t.inGraceWindow(graceOpen, true, grace));
+        assertEquals(0.0, t.graceFillProgress(graceOpen, grace), 1e-9);
+
+        // Mid grace
+        Instant mid = start.minusSeconds(300);
+        assertEquals(EventPhase.COUNTDOWN, t.phaseAt(mid));
+        assertTrue(t.inGraceWindow(mid, true, grace));
+        assertEquals(0.5, t.graceFillProgress(mid, grace), 1e-9);
+
+        // Disabled / zero length
+        assertFalse(t.inGraceWindow(mid, false, grace));
+        assertFalse(t.inGraceWindow(mid, true, 0));
+
+        // At hunt start — real phase flips; grace off
+        assertEquals(EventPhase.HUNT, t.phaseAt(start));
+        assertFalse(t.inGraceWindow(start, true, grace));
+        assertEquals(1.0, t.graceFillProgress(start, grace), 1e-9);
+    }
+
+    @Test
     void phaseFillProgressTracksCurrentSegment() {
         Instant start = Instant.parse("2026-01-01T12:00:00Z");
         Instant end = Instant.parse("2026-01-01T14:00:00Z");

@@ -26,6 +26,8 @@ public final class EffectService {
         KILL_CREDITED("effects.kill.credited"),
         KILL_GLOBAL("effects.kill.global"),
         HUNT_START("effects.hunt.start"),
+        /** Cosmetic enter of pre-hunt grace window (COUNTDOWN only). */
+        GRACE_START("effects.grace.start"),
         FFA_ANNOUNCE("effects.ffa.announce"),
         FFA_FINAL_COUNTDOWN("effects.ffa.final-countdown"),
         FFA_TELEPORT("effects.ffa.teleport"),

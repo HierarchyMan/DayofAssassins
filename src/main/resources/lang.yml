@@ -22,9 +22,15 @@ phase:
   idle: "Idle"
   paused: "Paused"
   countdown: "Starting soon"
+  grace: "Grace"
   hunt: "Hunt"
   ffa: "Finale"
   ended: "Ended"
+
+grace:
+  # Cosmetic only — last N minutes of countdown (config grace.seconds)
+  start-title: "&a&lGRACE PERIOD"
+  start-subtitle: "&7Hunt opens in &f%countdown% &7— get ready"
 
 hunt:
   start-title: "&c&lTHE HUNT BEGINS"
@@ -35,6 +41,8 @@ bossbar:
   # %countdown% / %remaining% = time until the next stage (start / finale / end)
   # %until_end% = time until the event fully ends (optional)
   countdown-title: "&cDay of Assassins &7starts in &f%countdown%"
+  # Cosmetic grace window (same %countdown% = time until hunt opens)
+  grace-title: "&aGrace &7| hunt opens in &f%countdown%"
   title: "&cDay of Assassins &7| &f%top_killer% &8(%top_kills% kills) &7| next &f%remaining%"
   title-no-kills: "&cDay of Assassins &7| &8No leader yet &7| next &f%remaining%"
 
@@ -211,6 +219,8 @@ host:
         name: "&6Rewards"
       ffa:
         name: "&cFinale settings"
+      grace:
+        name: "&aPre-hunt grace"
     times:
       title: "&8Schedule times"
       prompt: "&eType &f%field%&e: &f%format%&e. &7Or &fcancel"
@@ -223,6 +233,8 @@ host:
       title: "&8Rewards"
     ffa:
       title: "&8Finale settings"
+    grace:
+      title: "&8Pre-hunt grace"
     common:
       back: "&7← Back"
       close: "&cClose"

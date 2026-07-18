@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -43,6 +44,9 @@ public final class EventScheduler {
     private final Set<Long> firedAnnounceEpochs = new HashSet<>();
     private final Set<Integer> firedFinalCountdownSeconds = new HashSet<>();
     private Long announceScheduleKey;
+    /** Start-epoch key for cosmetic grace enter (one-shot title/sound per start schedule). */
+    private Long graceScheduleKey;
+    private boolean graceEnterFired;
     private EventPhase lastPhase = EventPhase.IDLE;
     private BukkitTask outsideActionbarTask;
     private Component outsideActionbarMessage;
@@ -78,6 +82,8 @@ public final class EventScheduler {
         firedAnnounceEpochs.clear();
         firedFinalCountdownSeconds.clear();
         announceScheduleKey = null;
+        graceScheduleKey = null;
+        graceEnterFired = false;
         Instant now = Instant.now();
         EventPhase current = eventManager.refreshPhase(now);
         // Restart after a finished event: freeze in pause (same as post-ceremony)
@@ -133,6 +139,10 @@ public final class EventScheduler {
             tabDisplayService.update(now);
         }
         // clear only on phase leave (onPhaseChange) — not every idle second
+
+        if (phase == EventPhase.COUNTDOWN) {
+            maybeGraceEnter(now);
+        }
 
         if (phase == EventPhase.HUNT || phase == EventPhase.COUNTDOWN) {
             maybeFinalCountdown(now);
@@ -232,6 +242,59 @@ public final class EventScheduler {
             firedFinalCountdownSeconds.clear();
             announceScheduleKey = null;
         }
+        // Leaving countdown (or any non-countdown): allow grace toast again if start is rewound
+        if (to != EventPhase.COUNTDOWN) {
+            graceEnterFired = false;
+        }
+    }
+
+    /**
+     * Cosmetic only: once per start schedule when the last-N-seconds grace window opens.
+     * Never advances phase or side effects.
+     */
+    private void maybeGraceEnter(Instant now) {
+        if (!config.graceEnabled()) {
+            return;
+        }
+        long graceSecs = config.graceSeconds();
+        if (graceSecs <= 0L) {
+            return;
+        }
+        EventTimeline timeline = eventManager.timeline();
+        Optional<Instant> startOpt = timeline.start();
+        if (startOpt.isEmpty()) {
+            return;
+        }
+        Instant start = startOpt.get();
+        long startEpoch = start.getEpochSecond();
+        if (graceScheduleKey == null || graceScheduleKey != startEpoch) {
+            graceScheduleKey = startEpoch;
+            graceEnterFired = false;
+        }
+        if (!timeline.inGraceWindow(now, true, graceSecs)) {
+            // Before window: keep unfired. After start: phase leaves COUNTDOWN and flag resets above.
+            return;
+        }
+        if (graceEnterFired) {
+            return;
+        }
+        graceEnterFired = true;
+        broadcastGraceStart(timeline.secondsUntilNextPhase(now));
+    }
+
+    private void broadcastGraceStart(long secondsUntilHunt) {
+        String countdown = TimeUtil.formatCountdown(Math.max(0L, secondsUntilHunt));
+        Map<String, String> ph = Map.of("countdown", countdown);
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            effects.showTitle(
+                    p,
+                    EffectService.EffectKey.GRACE_START,
+                    lang.msg("grace.start-title", ph),
+                    lang.msg("grace.start-subtitle", ph)
+            );
+            effects.play(p, EffectService.EffectKey.GRACE_START);
+        }
+        logger.info("Cosmetic grace window opened — hunt in " + countdown);
     }
 
     private void broadcastHuntStart() {

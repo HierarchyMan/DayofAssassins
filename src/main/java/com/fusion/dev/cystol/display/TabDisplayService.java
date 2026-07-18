@@ -70,6 +70,10 @@ public final class TabDisplayService {
 
     private String lastBossTitle;
     private float lastBossProgress = Float.NaN;
+    /** Last applied bossbar color name (e.g. RED) — reapplied when phase changes. */
+    private String lastBossColor;
+    /** Last applied bossbar style token (PROGRESS / NOTCHED_*). */
+    private String lastBossStyle;
     private String lastScoreboardFingerprint;
     /** Throttle "bossbar missing" log — never spam once per second. */
     private long lastBossMissingLogMs;
@@ -149,6 +153,9 @@ public final class TabDisplayService {
             String topName = top1.map(DenseRanking.Entry::name).orElse(null);
             Integer topKills = top1.map(DenseRanking.Entry::kills).orElse(null);
 
+            boolean graceActive = timeline.inGraceWindow(
+                    now, config.graceEnabled(), config.graceSeconds()
+            );
             EventDisplayRenderer.BossBarView bar = EventDisplayRenderer.renderBossBar(
                     timeline,
                     now,
@@ -157,15 +164,18 @@ public final class TabDisplayService {
                     lang.raw("bossbar.title"),
                     lang.raw("bossbar.title-no-kills"),
                     topName,
-                    topKills
+                    topKills,
+                    config.graceEnabled(),
+                    config.graceSeconds(),
+                    lang.raw("bossbar.grace-title")
             );
 
             active = true;
-            updateBossBar(bar);
+            updateBossBar(bar, phase, graceActive);
             if (available) {
                 TabAPI api = TabAPI.getInstance();
                 if (api != null) {
-                    updateScoreboardInject(api, phase, timeline, now, topRanking, topSlots);
+                    updateScoreboardInject(api, phase, graceActive, timeline, now, topRanking, topSlots);
                 }
             }
         } catch (Throwable t) {
@@ -173,7 +183,7 @@ public final class TabDisplayService {
         }
     }
 
-    private void updateBossBar(EventDisplayRenderer.BossBarView bar) {
+    private void updateBossBar(EventDisplayRenderer.BossBarView bar, EventPhase phase, boolean graceActive) {
         if (!config.tabBossbarEnabled()) {
             return;
         }
@@ -188,21 +198,27 @@ public final class TabDisplayService {
         }
         try {
             String title = EventDisplayRenderer.colorAmpersandToSection(bar.titleLegacyAmpersand());
+            // Prefer view.graceMode when present; graceActive keeps callers in sync
+            boolean grace = graceActive || bar.graceMode();
+            String colorName = config.tabBossbarColorForDisplay(phase, grace);
+            String styleName = config.tabBossbarStyle();
             if (bossBackend == BossBackend.TAB) {
-                updateTabBossBar(title, bar.progress());
+                updateTabBossBar(title, bar.progress(), colorName, styleName);
             } else {
-                updatePaperBossBar(title, bar.progress());
+                updatePaperBossBar(title, bar.progress(), colorName, styleName);
             }
         } catch (Throwable t) {
             logger.log(Level.WARNING, "bossbar update failed — recreating", t);
             destroyBossBars();
             lastBossTitle = null;
             lastBossProgress = Float.NaN;
+            lastBossColor = null;
+            lastBossStyle = null;
             lastBossViewerScanSize = -1;
         }
     }
 
-    private void updateTabBossBar(String titleSection, float progress01) {
+    private void updateTabBossBar(String titleSection, float progress01, String colorName, String styleName) {
         if (tabBossBar == null) {
             return;
         }
@@ -216,6 +232,22 @@ public final class TabDisplayService {
         if (Float.isNaN(lastBossProgress) || Math.abs(progressPercent - lastBossProgress) > 0.05f) {
             tabBossBar.setProgress(progressPercent);
             lastBossProgress = progressPercent;
+        }
+        if (colorName != null && !colorName.equals(lastBossColor)) {
+            try {
+                tabBossBar.setColor(parseTabBarColor(colorName));
+                lastBossColor = colorName;
+            } catch (Throwable t) {
+                logger.log(Level.FINE, "TAB bossbar setColor failed for " + colorName, t);
+            }
+        }
+        if (styleName != null && !styleName.equals(lastBossStyle)) {
+            try {
+                tabBossBar.setStyle(parseTabBarStyle(styleName));
+                lastBossStyle = styleName;
+            } catch (Throwable t) {
+                logger.log(Level.FINE, "TAB bossbar setStyle failed for " + styleName, t);
+            }
         }
         int online = Bukkit.getOnlinePlayers().size();
         int viewers;
@@ -247,7 +279,7 @@ public final class TabDisplayService {
         }
     }
 
-    private void updatePaperBossBar(String titleSection, float progress01) {
+    private void updatePaperBossBar(String titleSection, float progress01, String colorName, String styleName) {
         if (paperBossBar == null) {
             return;
         }
@@ -260,6 +292,22 @@ public final class TabDisplayService {
         if (Float.isNaN(lastBossProgress) || Math.abs(progress - lastBossProgress) > 0.0005f) {
             paperBossBar.setProgress(progress);
             lastBossProgress = progress;
+        }
+        if (colorName != null && !colorName.equals(lastBossColor)) {
+            try {
+                paperBossBar.setColor(parsePaperBarColor(colorName));
+                lastBossColor = colorName;
+            } catch (Throwable t) {
+                logger.log(Level.FINE, "Paper bossbar setColor failed for " + colorName, t);
+            }
+        }
+        if (styleName != null && !styleName.equals(lastBossStyle)) {
+            try {
+                paperBossBar.setStyle(parsePaperBarStyle(styleName));
+                lastBossStyle = styleName;
+            } catch (Throwable t) {
+                logger.log(Level.FINE, "Paper bossbar setStyle failed for " + styleName, t);
+            }
         }
         paperBossBar.setVisible(true);
         int online = Bukkit.getOnlinePlayers().size();
@@ -286,6 +334,7 @@ public final class TabDisplayService {
     private void updateScoreboardInject(
             TabAPI api,
             EventPhase phase,
+            boolean graceActive,
             EventTimeline timeline,
             Instant now,
             List<DenseRanking.Entry> topRanking,
@@ -303,7 +352,10 @@ public final class TabDisplayService {
         // %remaining% = until next phase (hunt→ffa, ffa→end). %until_end% still available in templates.
         String remainingPhase = TimeUtil.formatCountdown(timeline.secondsUntilNextPhase(now));
         String remainingEnd = TimeUtil.formatCountdown(timeline.secondsUntilEnd(now));
-        String phaseLabel = lang.raw("phase." + phase.name().toLowerCase(), phase.name());
+        // Cosmetic grace label does not change real EventPhase
+        String phaseLabel = graceActive
+                ? lang.raw("phase.grace", "Grace")
+                : lang.raw("phase." + phase.name().toLowerCase(), phase.name());
         Map<Integer, String> injections = EventDisplayRenderer.renderScoreboardInjections(
                 configured,
                 phase,
@@ -319,7 +371,7 @@ public final class TabDisplayService {
             return;
         }
 
-        String fingerprint = scoreboardFingerprint(phase, topRanking, injections);
+        String fingerprint = scoreboardFingerprint(phase, graceActive, topRanking, injections);
         boolean contentChanged = !fingerprint.equals(lastScoreboardFingerprint);
 
         // Fast path: text unchanged — only inject boards we have never touched (new join / board switch).
@@ -450,11 +502,12 @@ public final class TabDisplayService {
 
     private static String scoreboardFingerprint(
             EventPhase phase,
+            boolean graceActive,
             List<DenseRanking.Entry> topRanking,
             Map<Integer, String> injections
     ) {
         StringBuilder b = new StringBuilder(96);
-        b.append(phase == null ? "IDLE" : phase.name()).append('|');
+        b.append(phase == null ? "IDLE" : phase.name()).append(graceActive ? "|G|" : "|");
         if (topRanking != null) {
             for (DenseRanking.Entry e : topRanking) {
                 b.append(e.name()).append('#').append(e.kills()).append('#').append(e.place()).append(';');
@@ -500,10 +553,12 @@ public final class TabDisplayService {
         }
         try {
             // Paper ships org.bukkit.boss.BossBar — no third-party shade required.
+            String colorName = config.tabBossbarColor();
+            String styleName = config.tabBossbarStyle();
             paperBossBar = Bukkit.createBossBar(
                     BOSSBAR_TITLE_SEED,
-                    org.bukkit.boss.BarColor.RED,
-                    org.bukkit.boss.BarStyle.SOLID
+                    parsePaperBarColor(colorName),
+                    parsePaperBarStyle(styleName)
             );
             paperBossBar.setProgress(0.0);
             paperBossBar.setVisible(true);
@@ -514,6 +569,8 @@ public final class TabDisplayService {
             bossBackend = BossBackend.PAPER;
             lastBossTitle = null;
             lastBossProgress = Float.NaN;
+            lastBossColor = colorName;
+            lastBossStyle = styleName;
             logger.info("Created Day of Assassins Paper/Bukkit bossbar (TAB bossbar feature not required)");
         } catch (Throwable t) {
             logger.log(Level.WARNING, "Failed to create Paper bossbar", t);
@@ -522,10 +579,82 @@ public final class TabDisplayService {
         }
     }
 
-    private static BossBar createEventBossBar(BossBarManager bbm) {
+    private BossBar createEventBossBar(BossBarManager bbm) {
         // TAB 5.x: createBossBar(title, progress 0-100, color, style) — generates UUID name.
         // Progress seed 0; live updates use setProgress with 0–100.
-        return bbm.createBossBar(BOSSBAR_TITLE_SEED, 0f, BarColor.RED, BarStyle.PROGRESS);
+        String colorName = config.tabBossbarColor();
+        String styleName = config.tabBossbarStyle();
+        BossBar bar = bbm.createBossBar(
+                BOSSBAR_TITLE_SEED,
+                0f,
+                parseTabBarColor(colorName),
+                parseTabBarStyle(styleName)
+        );
+        lastBossColor = colorName;
+        lastBossStyle = styleName;
+        return bar;
+    }
+
+    static BarColor parseTabBarColor(String name) {
+        if (name == null || name.isBlank()) {
+            return BarColor.RED;
+        }
+        try {
+            return BarColor.valueOf(name.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return BarColor.RED;
+        }
+    }
+
+    static BarStyle parseTabBarStyle(String name) {
+        if (name == null || name.isBlank()) {
+            return BarStyle.PROGRESS;
+        }
+        String u = name.trim().toUpperCase(java.util.Locale.ROOT);
+        if ("SOLID".equals(u)) {
+            u = "PROGRESS";
+        }
+        if (u.startsWith("SEGMENTED_")) {
+            u = "NOTCHED_" + u.substring("SEGMENTED_".length());
+        }
+        try {
+            return BarStyle.valueOf(u);
+        } catch (IllegalArgumentException e) {
+            return BarStyle.PROGRESS;
+        }
+    }
+
+    static org.bukkit.boss.BarColor parsePaperBarColor(String name) {
+        if (name == null || name.isBlank()) {
+            return org.bukkit.boss.BarColor.RED;
+        }
+        try {
+            return org.bukkit.boss.BarColor.valueOf(name.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return org.bukkit.boss.BarColor.RED;
+        }
+    }
+
+    /**
+     * Map config style tokens to Bukkit. Canonical config uses PROGRESS / NOTCHED_*;
+     * Bukkit uses SOLID / SEGMENTED_*.
+     */
+    static org.bukkit.boss.BarStyle parsePaperBarStyle(String name) {
+        if (name == null || name.isBlank()) {
+            return org.bukkit.boss.BarStyle.SOLID;
+        }
+        String u = name.trim().toUpperCase(java.util.Locale.ROOT);
+        if ("PROGRESS".equals(u) || "SOLID".equals(u)) {
+            return org.bukkit.boss.BarStyle.SOLID;
+        }
+        if (u.startsWith("NOTCHED_")) {
+            u = "SEGMENTED_" + u.substring("NOTCHED_".length());
+        }
+        try {
+            return org.bukkit.boss.BarStyle.valueOf(u);
+        } catch (IllegalArgumentException e) {
+            return org.bukkit.boss.BarStyle.SOLID;
+        }
     }
 
     private void destroyBossBars() {
@@ -541,6 +670,8 @@ public final class TabDisplayService {
         }
         tabBossBar = null;
         bossBackend = BossBackend.NONE;
+        lastBossColor = null;
+        lastBossStyle = null;
     }
 
     public void clear() {
@@ -567,6 +698,8 @@ public final class TabDisplayService {
         active = false;
         lastBossTitle = null;
         lastBossProgress = Float.NaN;
+        lastBossColor = null;
+        lastBossStyle = null;
         lastScoreboardFingerprint = null;
         lastBossViewerScanSize = -1;
 

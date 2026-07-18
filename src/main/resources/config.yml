@@ -108,6 +108,13 @@ wand:
   material: BLAZE_ROD
   custom-model-data: 0
 
+# Cosmetic only — last N seconds of COUNTDOWN before hunt actually starts.
+# Does not change phase, kill rules, compasses, or teleport locks.
+grace:
+  enabled: true
+  # 600 = 10 minutes. 0 = off even if enabled is true.
+  seconds: 600
+
 tab:
   scoreboard:
     # Inject into the existing TAB board (never replaces it).
@@ -132,11 +139,38 @@ tab:
     # This plugin's event bar. Prefers TAB BossBarManager when TAB bossbar.enabled is true;
     # otherwise uses Paper/Bukkit BossBar (no need to enable TAB's own bossbar feature).
     enabled: true
+    # Fallback color/style when a phase has no override below.
+    # Colors (both backends): PINK BLUE RED GREEN YELLOW PURPLE WHITE
     color: RED
+    # Style: PROGRESS (solid fill) or NOTCHED_6 / NOTCHED_10 / NOTCHED_12 / NOTCHED_20
+    # Paper maps PROGRESS→SOLID and NOTCHED_N→SEGMENTED_N.
     style: PROGRESS
+    # Per-stage bar color (overrides color). Keys: countdown, grace, hunt, ffa.
+    colors:
+      countdown: YELLOW
+      grace: GREEN
+      hunt: RED
+      ffa: PURPLE
 
 effects:
   enabled: true
+  # Cosmetic grace enter (last N min of countdown) — title text is lang.yml grace.*
+  grace:
+    start:
+      sound:
+        enabled: true
+        sound: "minecraft:block.note_block.chime"
+        volume: 0.9
+        pitch: 1.1
+      particle:
+        enabled: false
+        particle: HAPPY_VILLAGER
+        count: 8
+      title:
+        enabled: true
+        fade-in: 250
+        stay: 3000
+        fade-out: 500
   hunt:
     start:
       sound:

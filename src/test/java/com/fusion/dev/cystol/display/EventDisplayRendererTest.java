@@ -2,9 +2,11 @@ package com.fusion.dev.cystol.display;
 
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.event.EventPhase;
+import com.fusion.dev.cystol.event.EventTimeline;
 import com.fusion.dev.cystol.kill.DenseRanking;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -97,5 +99,55 @@ class EventDisplayRendererTest {
         assertEquals(100f, EventDisplayRenderer.progressPercent(1f), 0.001f);
         assertEquals(100f, EventDisplayRenderer.progressPercent(2f), 0.001f);
         assertEquals(0f, EventDisplayRenderer.progressPercent(-1f), 0.001f);
+    }
+
+    @Test
+    void graceBossBarUsesGraceTitleAndDoesNotRequireLiveKillers() {
+        Instant start = Instant.parse("2026-01-01T12:00:00Z");
+        Instant end = Instant.parse("2026-01-01T14:00:00Z");
+        EventTimeline t = new EventTimeline(start, end, null, 1800);
+        Instant midGrace = start.minusSeconds(300);
+        EventDisplayRenderer.BossBarView bar = EventDisplayRenderer.renderBossBar(
+                t,
+                midGrace,
+                3600,
+                "&cstarts in %countdown%",
+                "&clive %top_killer%",
+                "&cnokills",
+                null,
+                null,
+                true,
+                600,
+                "&aGrace %countdown%"
+        );
+        assertTrue(bar.graceMode());
+        assertTrue(bar.countdownMode());
+        assertTrue(bar.titleLegacyAmpersand().contains("Grace"));
+        assertFalse(bar.titleLegacyAmpersand().contains("starts in"));
+        assertEquals(0.5f, bar.progress(), 0.001f);
+    }
+
+    @Test
+    void graceDisabledKeepsNormalCountdownTitle() {
+        Instant start = Instant.parse("2026-01-01T12:00:00Z");
+        Instant end = Instant.parse("2026-01-01T14:00:00Z");
+        EventTimeline t = new EventTimeline(start, end, null, 1800);
+        Instant midGrace = start.minusSeconds(300);
+        EventDisplayRenderer.BossBarView bar = EventDisplayRenderer.renderBossBar(
+                t,
+                midGrace,
+                3600,
+                "&cstarts in %countdown%",
+                "&clive",
+                "&cnokills",
+                null,
+                null,
+                false,
+                600,
+                "&aGrace %countdown%"
+        );
+        assertFalse(bar.graceMode());
+        assertTrue(bar.countdownMode());
+        assertTrue(bar.titleLegacyAmpersand().contains("starts in"));
     }
 }

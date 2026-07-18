@@ -2,6 +2,7 @@ package com.fusion.dev.cystol.config;
 
 import com.fusion.dev.cystol.arena.CuboidBounds;
 import com.fusion.dev.cystol.config.yaml.ManagedYamlFiles;
+import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.util.TimeUtil;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -12,8 +13,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -249,6 +252,138 @@ public final class PluginConfig {
 
     public boolean tabBossbarEnabled() {
         return cfg().getBoolean("tab.bossbar.enabled", true);
+    }
+
+    /**
+     * Default bossbar color name when no phase override is set
+     * ({@code PINK}/{@code BLUE}/{@code RED}/{@code GREEN}/{@code YELLOW}/{@code PURPLE}/{@code WHITE}).
+     */
+    public String tabBossbarColor() {
+        return normalizeBossBarColorName(cfg().getString("tab.bossbar.color", "RED"), "RED");
+    }
+
+    /**
+     * Default bossbar style name ({@code PROGRESS}, {@code NOTCHED_6}, …).
+     * Paper maps these to Bukkit {@code SOLID}/{@code SEGMENTED_*} in the display layer.
+     */
+    public String tabBossbarStyle() {
+        return normalizeBossBarStyleName(cfg().getString("tab.bossbar.style", "PROGRESS"), "PROGRESS");
+    }
+
+    /**
+     * Bossbar color for a live phase. Uses {@code tab.bossbar.colors.<phase>} when set,
+     * otherwise {@link #tabBossbarColor()}.
+     *
+     * @param phase event phase (null → default color)
+     */
+    public String tabBossbarColorForPhase(EventPhase phase) {
+        if (phase == null) {
+            return tabBossbarColor();
+        }
+        return tabBossbarColorForKey(phase.name().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Bossbar color for a display key ({@code countdown}, {@code grace}, {@code hunt}, {@code ffa}, …).
+     * Falls back to {@link #tabBossbarColor()} when unset/invalid.
+     */
+    public String tabBossbarColorForKey(String key) {
+        String fallback = tabBossbarColor();
+        if (key == null || key.isBlank()) {
+            return fallback;
+        }
+        String raw = cfg().getString("tab.bossbar.colors." + key.trim().toLowerCase(Locale.ROOT), null);
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        return normalizeBossBarColorName(raw, fallback);
+    }
+
+    /**
+     * Display color: cosmetic grace uses {@code colors.grace}; otherwise phase color.
+     */
+    public String tabBossbarColorForDisplay(EventPhase phase, boolean graceActive) {
+        if (graceActive) {
+            return tabBossbarColorForKey("grace");
+        }
+        return tabBossbarColorForPhase(phase);
+    }
+
+    // --- Pre-hunt cosmetic grace (last N seconds of COUNTDOWN) ---
+
+    /** When true and {@link #graceSeconds()} &gt; 0, last N seconds of countdown get grace cosmetics. */
+    public boolean graceEnabled() {
+        return cfg().getBoolean("grace.enabled", true);
+    }
+
+    /**
+     * Grace window length in seconds (default 600 = 10 minutes). {@code 0} disables even if enabled is true.
+     */
+    public long graceSeconds() {
+        return Math.max(0L, cfg().getLong("grace.seconds", 600L));
+    }
+
+    public void setGraceEnabled(boolean enabled) {
+        writeValue("grace.enabled", enabled);
+    }
+
+    public void setGraceSeconds(long seconds) {
+        writeValue("grace.seconds", Math.max(0L, seconds));
+    }
+
+    /** Valid Bukkit/TAB bossbar color names (uppercase). */
+    public static final Set<String> BOSSBAR_COLORS = Set.of(
+            "PINK", "BLUE", "RED", "GREEN", "YELLOW", "PURPLE", "WHITE"
+    );
+
+    /** Canonical style tokens after normalize (uppercase). */
+    public static final Set<String> BOSSBAR_STYLES = Set.of(
+            "PROGRESS", "NOTCHED_6", "NOTCHED_10", "NOTCHED_12", "NOTCHED_20"
+    );
+
+    public static String normalizeBossBarColorName(String raw, String fallback) {
+        String fb = fallback == null || fallback.isBlank()
+                ? "RED"
+                : fallback.trim().toUpperCase(Locale.ROOT);
+        if (!BOSSBAR_COLORS.contains(fb)) {
+            fb = "RED";
+        }
+        if (raw == null || raw.isBlank()) {
+            return fb;
+        }
+        String u = raw.trim().toUpperCase(Locale.ROOT);
+        return BOSSBAR_COLORS.contains(u) ? u : fb;
+    }
+
+    /**
+     * Canonical style tokens stored in memory: {@code PROGRESS} or {@code NOTCHED_6/10/12/20}.
+     * Accepts Bukkit {@code SOLID}/{@code SEGMENTED_*} aliases.
+     */
+    public static String normalizeBossBarStyleName(String raw, String fallback) {
+        String fb = canonicalizeStyleToken(
+                fallback == null || fallback.isBlank() ? "PROGRESS" : fallback.trim().toUpperCase(Locale.ROOT)
+        );
+        if (!BOSSBAR_STYLES.contains(fb)) {
+            fb = "PROGRESS";
+        }
+        if (raw == null || raw.isBlank()) {
+            return fb;
+        }
+        String canon = canonicalizeStyleToken(raw.trim().toUpperCase(Locale.ROOT));
+        return BOSSBAR_STYLES.contains(canon) ? canon : fb;
+    }
+
+    private static String canonicalizeStyleToken(String u) {
+        if (u == null || u.isBlank()) {
+            return "PROGRESS";
+        }
+        if ("SOLID".equals(u) || "PROGRESS".equals(u)) {
+            return "PROGRESS";
+        }
+        if (u.startsWith("SEGMENTED_")) {
+            return "NOTCHED_" + u.substring("SEGMENTED_".length());
+        }
+        return u;
     }
 
     /**

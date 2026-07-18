@@ -197,6 +197,38 @@ public final class EventTimeline {
         return p == EventPhase.HUNT || p == EventPhase.FFA;
     }
 
+    /**
+     * Cosmetic pre-hunt grace only: last {@code graceSeconds} of {@link EventPhase#COUNTDOWN}.
+     * Does <strong>not</strong> change {@link #phaseAt}, kill windows, or any side-effect schedule.
+     *
+     * @param enabled       master toggle
+     * @param graceSeconds  window length; {@code <= 0} means off
+     */
+    public boolean inGraceWindow(Instant now, boolean enabled, long graceSeconds) {
+        Objects.requireNonNull(now, "now");
+        if (!enabled || graceSeconds <= 0L || start == null) {
+            return false;
+        }
+        if (phaseAt(now) != EventPhase.COUNTDOWN) {
+            return false;
+        }
+        long untilStart = secondsUntilNextPhase(now);
+        return untilStart > 0L && untilStart <= graceSeconds;
+    }
+
+    /**
+     * Grace bar fill: 0 at grace open (start − graceSeconds), 1 at hunt start.
+     * When outside the window, returns 0 before open and 1 at/after start.
+     */
+    public double graceFillProgress(Instant now, long graceSeconds) {
+        Objects.requireNonNull(now, "now");
+        if (start == null || graceSeconds <= 0L) {
+            return 0.0;
+        }
+        Instant graceOpen = start.minusSeconds(graceSeconds);
+        return segmentFill(now, graceOpen, start);
+    }
+
     private static double segmentFill(Instant now, Instant from, Instant to) {
         if (now.isBefore(from)) {
             return 0.0;

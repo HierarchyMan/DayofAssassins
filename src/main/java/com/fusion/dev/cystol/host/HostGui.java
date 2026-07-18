@@ -142,6 +142,24 @@ public final class HostGui {
                 }
         ));
 
+        boolean graceOn = config.graceEnabled() && config.graceSeconds() > 0L;
+        gui.setItem(4, 5, navItem(
+                graceOn ? Material.LIME_BANNER : Material.GRAY_BANNER,
+                lang.raw("host.gui.main.grace.name"),
+                List.of(
+                        "&7Cosmetic last-N countdown before hunt",
+                        "&8(title + sound + bossbar color/text only)",
+                        "&8Enabled: &f" + onOff(config.graceEnabled()),
+                        "&8Duration: &f" + formatDuration(config.graceSeconds()),
+                        "",
+                        "&eClick to open"
+                ),
+                e -> {
+                    clickFx(player);
+                    openGrace(player);
+                }
+        ));
+
         // Timeline order left → right: hunt → finale → end
         gui.setItem(5, 3, navItem(
                 Material.LIME_DYE,
@@ -278,6 +296,72 @@ public final class HostGui {
                     config.setRewardsMaxPlace(next);
                     clickFx(player);
                     openRewards(player);
+                }
+        ));
+
+        gui.setItem(4, 5, backItem(player, this::openMain));
+        gui.open(player);
+    }
+
+    /**
+     * Pre-hunt cosmetic grace: enable/duration only — no schedule side effects.
+     */
+    public void openGrace(Player player) {
+        Gui gui = Gui.gui()
+                .title(TextUtil.component(lang.raw("host.gui.grace.title"), Map.of()))
+                .rows(4)
+                .create();
+        gui.setDefaultClickAction(e -> e.setCancelled(true));
+
+        boolean on = config.graceEnabled();
+        gui.setItem(2, 3, navItem(
+                on ? Material.LIME_DYE : Material.GRAY_DYE,
+                on ? "&aGrace cosmetics: ON" : "&7Grace cosmetics: OFF",
+                List.of(
+                        "&8Last-N countdown before hunt opens.",
+                        "&8Bossbar color/text + one title/sound.",
+                        "&8Does not change real stage or rules.",
+                        "&8Current: &f" + onOff(on),
+                        "",
+                        "&eClick &7to toggle"
+                ),
+                e -> {
+                    config.setGraceEnabled(!config.graceEnabled());
+                    if (eventScheduler != null) {
+                        eventScheduler.refreshDisplayNow();
+                    }
+                    clickFx(player);
+                    openGrace(player);
+                }
+        ));
+
+        gui.setItem(2, 5, longSetting(
+                Material.CLOCK,
+                "&eGrace duration",
+                config.graceSeconds(),
+                "Seconds before hunt start (cosmetic window). 0 = off.",
+                60, 300, 0, 24 * 3600L,
+                v -> {
+                    config.setGraceSeconds(v);
+                    if (eventScheduler != null) {
+                        eventScheduler.refreshDisplayNow();
+                    }
+                },
+                player,
+                () -> openGrace(player)
+        ));
+
+        gui.setItem(2, 7, navItem(
+                Material.BOOK,
+                "&7What this does",
+                List.of(
+                        "&8When ON and duration > 0:",
+                        "&8• Entering the window: title + sound",
+                        "&8• Bossbar switches to grace color/text",
+                        "&8• Scoreboard %phase% shows Grace",
+                        "&8• Real phase stays COUNTDOWN until start"
+                ),
+                e -> {
                 }
         ));
 

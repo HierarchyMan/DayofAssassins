@@ -24,7 +24,16 @@ import java.util.Objects;
  */
 public final class EventDisplayRenderer {
 
-    public record BossBarView(String titleLegacyAmpersand, float progress, boolean countdownMode) {
+    /**
+     * @param countdownMode true for pre-start countdown (including cosmetic grace)
+     * @param graceMode     true only during the cosmetic last-N-seconds grace window
+     */
+    public record BossBarView(
+            String titleLegacyAmpersand,
+            float progress,
+            boolean countdownMode,
+            boolean graceMode
+    ) {
     }
 
     public record ScoreboardView(List<String> linesSectionColor) {
@@ -60,6 +69,9 @@ public final class EventDisplayRenderer {
      * <p>{@code %remaining%} is time until the <em>next phase change</em> (not total event end).
      * {@code %until_end%} is total time until event end when needed in lang templates.
      * Live bar progress fills the current phase segment.
+     *
+     * <p>When cosmetic grace is active (last N seconds of COUNTDOWN), title/progress use the
+     * grace window only — real phase stays {@link EventPhase#COUNTDOWN}.
      */
     public static BossBarView renderBossBar(
             EventTimeline timeline,
@@ -71,15 +83,52 @@ public final class EventDisplayRenderer {
             String topKillerName,
             Integer topKills
     ) {
+        return renderBossBar(
+                timeline, now, announceLeadSeconds,
+                countdownTitleTemplate, liveTitleTemplate, noKillsTitleTemplate,
+                topKillerName, topKills,
+                false, 0L, null
+        );
+    }
+
+    /**
+     * @param graceEnabled        config toggle
+     * @param graceSeconds        window length; {@code <= 0} off
+     * @param graceTitleTemplate  lang template with {@code %countdown%}
+     */
+    public static BossBarView renderBossBar(
+            EventTimeline timeline,
+            Instant now,
+            long announceLeadSeconds,
+            String countdownTitleTemplate,
+            String liveTitleTemplate,
+            String noKillsTitleTemplate,
+            String topKillerName,
+            Integer topKills,
+            boolean graceEnabled,
+            long graceSeconds,
+            String graceTitleTemplate
+    ) {
         Objects.requireNonNull(timeline, "timeline");
         Objects.requireNonNull(now, "now");
         EventPhase phase = timeline.phaseAt(now);
+        boolean grace = timeline.inGraceWindow(now, graceEnabled, graceSeconds);
+        if (grace) {
+            long secs = timeline.secondsUntilNextPhase(now);
+            String countdown = TimeUtil.formatCountdown(secs);
+            String template = graceTitleTemplate == null || graceTitleTemplate.isBlank()
+                    ? countdownTitleTemplate
+                    : graceTitleTemplate;
+            String title = TextUtil.apply(template, Map.of("countdown", countdown));
+            float progress = (float) timeline.graceFillProgress(now, graceSeconds);
+            return new BossBarView(title, clamp01(progress), true, true);
+        }
         if (phase == EventPhase.COUNTDOWN) {
             long secs = timeline.secondsUntilNextPhase(now);
             String countdown = TimeUtil.formatCountdown(secs);
             String title = TextUtil.apply(countdownTitleTemplate, Map.of("countdown", countdown));
             float progress = (float) timeline.phaseFillProgress(now, announceLeadSeconds);
-            return new BossBarView(title, clamp01(progress), true);
+            return new BossBarView(title, clamp01(progress), true, false);
         }
         String remaining = TimeUtil.formatCountdown(timeline.secondsUntilNextPhase(now));
         String untilEnd = TimeUtil.formatCountdown(timeline.secondsUntilEnd(now));
@@ -98,7 +147,7 @@ public final class EventDisplayRenderer {
             ));
         }
         float progress = (float) timeline.phaseFillProgress(now, announceLeadSeconds);
-        return new BossBarView(title, clamp01(progress), false);
+        return new BossBarView(title, clamp01(progress), false, false);
     }
 
     /**
