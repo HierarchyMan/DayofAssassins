@@ -45,4 +45,23 @@ class TeleportLockServiceTest {
         Thread.sleep(5L);
         assertFalse(service.hasTemporaryAllow(shortLived));
     }
+
+    @Test
+    void temporaryAllowMergeExtendsWindow() {
+        TeleportLockService service = new TeleportLockService(null, null);
+        UUID id = UUID.randomUUID();
+        service.allowTemporarily(id, 50L);
+        service.allowTemporarily(id, 60_000L);
+        assertTrue(service.hasTemporaryAllow(id));
+        service.pruneExpiredAllows();
+        assertTrue(service.hasTemporaryAllow(id));
+    }
+
+    @Test
+    void temporaryAllowNullSafe() {
+        TeleportLockService service = new TeleportLockService(null, null);
+        service.allowTemporarily((UUID) null, 1000L);
+        assertFalse(service.hasTemporaryAllow((UUID) null));
+        assertFalse(service.hasTemporaryAllow((org.bukkit.entity.Player) null));
+    }
 }

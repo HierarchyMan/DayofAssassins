@@ -248,7 +248,7 @@ public final class EventScheduler {
             compassListener.stripAllOnlineSilent();
         }
         // Hunt kickoff toast + one-shot spawn-cuboid BetterRTP (not on PAUSED recovery / restart)
-        if (to == EventPhase.HUNT && from != EventPhase.HUNT && from != EventPhase.PAUSED) {
+        if (SpawnHuntRtpService.shouldKickoffOnPhaseChange(from, to)) {
             broadcastHuntStart();
             if (spawnHuntRtpService != null) {
                 String rtpErr = spawnHuntRtpService.runKickoffIfNeeded();

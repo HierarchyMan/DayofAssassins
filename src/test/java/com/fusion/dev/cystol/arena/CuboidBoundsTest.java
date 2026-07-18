@@ -31,4 +31,19 @@ class CuboidBoundsTest {
         assertSame(box, box.withMinimumHeight(24));
         assertEquals(30.0, box.sizeY(), 1e-9);
     }
+
+    @Test
+    void containsInclusiveForSpawnZoneGate() {
+        CuboidBounds spawn = new CuboidBounds(100, 64, 200, 120, 80, 220);
+        assertTrue(spawn.contains(100, 64, 200));
+        assertTrue(spawn.contains(120, 80, 220));
+        assertTrue(spawn.contains(110, 72, 210));
+        assertFalse(spawn.contains(99.9, 72, 210));
+        assertFalse(spawn.contains(110, 63.9, 210));
+        assertFalse(spawn.contains(110, 72, 220.1));
+        // wrong axis outside
+        assertFalse(spawn.contains(110, 72, 199));
+        assertTrue(spawn.containsHorizontal(110, 210));
+        assertFalse(spawn.containsHorizontal(50, 210));
+    }
 }

@@ -71,13 +71,48 @@ public final class SpawnHuntRtpService {
      * Whether hunt-spawn RTP may run right now for join / force (live HUNT, not paused, enabled).
      */
     public boolean isLiveHuntRtpWindow() {
-        if (!config.huntRtpEnabled()) {
+        return isLiveHuntRtpWindow(config.huntRtpEnabled(), eventManager.isPaused(), eventManager.phase());
+    }
+
+    /**
+     * Pure gate: config enabled, not paused, phase is exactly {@link EventPhase#HUNT}
+     * (not FFA / COUNTDOWN / PAUSED / etc.).
+     */
+    public static boolean isLiveHuntRtpWindow(boolean huntRtpEnabled, boolean paused, EventPhase phase) {
+        if (!huntRtpEnabled || paused) {
             return false;
         }
-        if (eventManager.isPaused()) {
+        return phase == EventPhase.HUNT;
+    }
+
+    /**
+     * Pure gate for kickoff mass dump on phase change.
+     * Fires when entering HUNT from pre-event (COUNTDOWN / IDLE / …), not from PAUSED recovery.
+     */
+    public static boolean shouldKickoffOnPhaseChange(EventPhase from, EventPhase to) {
+        return to == EventPhase.HUNT && from != EventPhase.HUNT && from != EventPhase.PAUSED;
+    }
+
+    /**
+     * Pure location gate: configured spawn world + cuboid contains feet.
+     * Spectator / bypass / online checks stay on the Player path.
+     */
+    public static boolean matchesSpawnCuboid(
+            boolean spawnConfigured,
+            String spawnWorld,
+            CuboidBounds cuboid,
+            String playerWorld,
+            double x,
+            double y,
+            double z
+    ) {
+        if (!spawnConfigured || cuboid == null) {
             return false;
         }
-        return eventManager.phase() == EventPhase.HUNT;
+        if (spawnWorld == null || playerWorld == null || !spawnWorld.equals(playerWorld)) {
+            return false;
+        }
+        return cuboid.contains(x, y, z);
     }
 
     /**
@@ -85,9 +120,6 @@ public final class SpawnHuntRtpService {
      */
     public boolean isEligibleInSpawnCuboid(Player player) {
         if (player == null || !player.isOnline()) {
-            return false;
-        }
-        if (!config.spawnZoneConfigured()) {
             return false;
         }
         if (player.getGameMode() == GameMode.SPECTATOR) {
@@ -100,12 +132,15 @@ public final class SpawnHuntRtpService {
         if (loc.getWorld() == null) {
             return false;
         }
-        String worldName = config.spawnWorld();
-        if (worldName == null || !loc.getWorld().getName().equals(worldName)) {
-            return false;
-        }
-        CuboidBounds cuboid = config.spawnCuboid();
-        return cuboid.contains(loc.getX(), loc.getY(), loc.getZ());
+        return matchesSpawnCuboid(
+                config.spawnZoneConfigured(),
+                config.spawnWorld(),
+                config.spawnCuboid(),
+                loc.getWorld().getName(),
+                loc.getX(),
+                loc.getY(),
+                loc.getZ()
+        );
     }
 
     public List<Player> eligibleOnlineInSpawn() {

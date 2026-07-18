@@ -35,9 +35,12 @@ class PrecivSuggestionsTest {
         List<String> admin = PrecivSuggestions.complete("admin ", true, true, true, NOW);
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin status")));
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin forcetp")));
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin forcespawnrtp")));
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin phase")));
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin set")));
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin clearkills")));
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin wand")));
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin spawnwand")));
     }
 
     @Test
@@ -57,8 +60,12 @@ class PrecivSuggestionsTest {
         List<String> targets = PrecivSuggestions.complete("admin set ", true, true, true, NOW);
         assertEquals(8, targets.size());
         assertTrue(targets.stream().allMatch(s -> s.startsWith("admin set ")));
+        assertTrue(targets.stream().anyMatch(s -> s.equals("admin set spawnpos1")));
+        assertTrue(targets.stream().anyMatch(s -> s.equals("admin set spawnpos2")));
         assertEquals(List.of("admin set starttime"),
                 PrecivSuggestions.complete("admin set st", true, true, true, NOW));
+        assertEquals(List.of("admin set spawnpos1", "admin set spawnpos2"),
+                PrecivSuggestions.complete("admin set spawn", true, true, true, NOW));
 
         String date = DateTimeFormatter.ofPattern("yyyy/MM/dd")
                 .format(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
