@@ -318,7 +318,7 @@ Defaults in `config.yml` include FX for:
 - Compass open GUI  
 - Menu select / page / deny  
 - Kill credited (sound + particle **and** a title to the killer)  
-- Global kill sound — a separate `effects.kill.global` sound played to **everyone except the killer** (default: `minecraft:entity.ender_dragon.growl`)  
+- Global kill sound — a separate `effects.kill.global` sound played to **everyone except the killer** (default: `minecraft:entity.lightning_bolt.thunder`)  
 - FFA announce & teleport  
 - End normal & top-3 heroic  
 
@@ -332,7 +332,7 @@ effects:
       particle: { enabled: true, particle: SOUL, count: 20 }
       title:   { enabled: true, fade-in: 250, stay: 1500, fade-out: 500 }  # text in lang.yml
     global:    # heard by everyone BUT the killer
-      sound:   { enabled: true, sound: "minecraft:entity.ender_dragon.growl", volume: 1.0, pitch: 1.0 }
+      sound:   { enabled: true, sound: "minecraft:entity.lightning_bolt.thunder", volume: 1.0, pitch: 1.0 }
       particle: { enabled: false }
 ```
 
