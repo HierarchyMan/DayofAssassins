@@ -9,7 +9,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Hunt-phase teleport lock. FFA has no lock (kills are zone-gated instead).
@@ -20,6 +23,8 @@ public final class TeleportLockService {
 
     private final EventManager eventManager;
     private final PluginConfig config;
+    /** Temporary allow for plugin-initiated RTP (BetterRTP may finish after player leaves spawn). */
+    private final ConcurrentHashMap<UUID, Long> temporaryAllowUntilMs = new ConcurrentHashMap<>();
 
     public TeleportLockService(EventManager eventManager, PluginConfig config) {
         this.eventManager = eventManager;
@@ -38,13 +43,62 @@ public final class TeleportLockService {
     }
 
     /**
+     * Allow teleports/commands for this player until {@code now + durationMs}.
+     * Used so hunt-spawn BetterRTP is never cancelled by this plugin's lock.
+     */
+    public void allowTemporarily(UUID uuid, long durationMs) {
+        if (uuid == null) {
+            return;
+        }
+        long ms = Math.max(1L, durationMs);
+        long until = System.currentTimeMillis() + ms;
+        temporaryAllowUntilMs.merge(uuid, until, Math::max);
+    }
+
+    public void allowTemporarily(Player player, long durationMs) {
+        if (player != null) {
+            allowTemporarily(player.getUniqueId(), durationMs);
+        }
+    }
+
+    public boolean hasTemporaryAllow(UUID uuid) {
+        if (uuid == null) {
+            return false;
+        }
+        Long until = temporaryAllowUntilMs.get(uuid);
+        if (until == null) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        if (now >= until) {
+            temporaryAllowUntilMs.remove(uuid, until);
+            return false;
+        }
+        return true;
+    }
+
+    public boolean hasTemporaryAllow(Player player) {
+        return player != null && hasTemporaryAllow(player.getUniqueId());
+    }
+
+    /** Drop expired entries (optional housekeeping). */
+    public void pruneExpiredAllows() {
+        long now = System.currentTimeMillis();
+        for (Map.Entry<UUID, Long> e : temporaryAllowUntilMs.entrySet()) {
+            if (e.getValue() != null && now >= e.getValue()) {
+                temporaryAllowUntilMs.remove(e.getKey(), e.getValue());
+            }
+        }
+    }
+
+    /**
      * Block command if lock is on, no bypass, and label is in the blocked list.
      * Zone is not checked here — players in spawn/arena still should not fire warp/home
      * from those zones if we only care about destination… Spec: free TP while <em>in</em>
      * spawn or arena (from-location). So if they are in an allowed zone, do not block.
      */
     public boolean shouldBlockCommand(Player player, String rawMessage) {
-        if (!isLockActive() || hasBypass(player)) {
+        if (!isLockActive() || hasBypass(player) || hasTemporaryAllow(player)) {
             return false;
         }
         if (isInAllowedZone(player.getLocation())) {
@@ -58,7 +112,7 @@ public final class TeleportLockService {
     }
 
     public boolean shouldBlockTeleport(Player player, Location from, TeleportCause cause) {
-        if (!isLockActive() || hasBypass(player)) {
+        if (!isLockActive() || hasBypass(player) || hasTemporaryAllow(player)) {
             return false;
         }
         if (isExemptCause(cause)) {

@@ -8,6 +8,7 @@ import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.display.TabDisplayService;
 import com.fusion.dev.cystol.fx.EffectService;
+import com.fusion.dev.cystol.teleport.SpawnHuntRtpService;
 import com.fusion.dev.cystol.util.TimeUtil;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
@@ -38,6 +39,7 @@ public final class EventScheduler {
     private final EndCeremonyService ceremonyService;
     private final TabDisplayService tabDisplayService;
     private final EffectService effects;
+    private final SpawnHuntRtpService spawnHuntRtpService;
     private final Logger logger;
 
     private BukkitTask tickTask;
@@ -63,6 +65,7 @@ public final class EventScheduler {
             EndCeremonyService ceremonyService,
             TabDisplayService tabDisplayService,
             EffectService effects,
+            SpawnHuntRtpService spawnHuntRtpService,
             Logger logger
     ) {
         this.plugin = plugin;
@@ -74,6 +77,7 @@ public final class EventScheduler {
         this.ceremonyService = ceremonyService;
         this.tabDisplayService = tabDisplayService;
         this.effects = effects;
+        this.spawnHuntRtpService = spawnHuntRtpService;
         this.logger = logger;
     }
 
@@ -111,6 +115,9 @@ public final class EventScheduler {
         outsideActionbarMessage = null;
         cancelFfaBatch();
         ffaTpInProgress.set(false);
+        if (spawnHuntRtpService != null) {
+            spawnHuntRtpService.shutdown();
+        }
     }
 
     private void cancelFfaBatch() {
@@ -173,6 +180,21 @@ public final class EventScheduler {
     }
 
     /**
+     * Admin force: re-run spawn-cuboid hunt RTP mass dump if currently live HUNT.
+     * @return null on success, otherwise a lang-key suffix reason
+     */
+    public String forceSpawnHuntRtp() {
+        if (spawnHuntRtpService == null) {
+            return "no-bridge";
+        }
+        return spawnHuntRtpService.forceKickoff();
+    }
+
+    public int lastForceSpawnRtpCount() {
+        return spawnHuntRtpService == null ? 0 : spawnHuntRtpService.lastForceCount();
+    }
+
+    /**
      * Admin force: re-run FFA mass TP if currently in FFA phase.
      * @return null on success, otherwise a lang-key suffix reason
      * ({@code not-ffa}, {@code in-progress}, {@code no-spawns})
@@ -225,9 +247,15 @@ public final class EventScheduler {
                 && to != EventPhase.HUNT && to != EventPhase.FFA) {
             compassListener.stripAllOnlineSilent();
         }
-        // Hunt kickoff toast (not on recovery into already-running FFA)
+        // Hunt kickoff toast + one-shot spawn-cuboid BetterRTP (not on PAUSED recovery / restart)
         if (to == EventPhase.HUNT && from != EventPhase.HUNT && from != EventPhase.PAUSED) {
             broadcastHuntStart();
+            if (spawnHuntRtpService != null) {
+                String rtpErr = spawnHuntRtpService.runKickoffIfNeeded();
+                if (rtpErr != null && !"already-done".equals(rtpErr) && !"disabled".equals(rtpErr)) {
+                    logger.warning("Hunt spawn RTP kickoff: " + rtpErr);
+                }
+            }
         }
         // Entering live display phases — push bossbar/scoreboard immediately (esp. unpause)
         if (to == EventPhase.COUNTDOWN || to == EventPhase.HUNT || to == EventPhase.FFA) {

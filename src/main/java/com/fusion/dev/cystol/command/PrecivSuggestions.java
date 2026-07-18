@@ -30,6 +30,7 @@ public final class PrecivSuggestions {
             "pause",
             "unpause",
             "forcetp",
+            "forcespawnrtp",
             "forceceremony",
             "resetflags",
             "eligible",
@@ -37,7 +38,8 @@ public final class PrecivSuggestions {
             "reload",
             "phase",
             "set",
-            "wand"
+            "wand",
+            "spawnwand"
     );
     private static final List<String> SET = List.of(
             "starttime", "ffatime", "endtime", "centerspawn", "pos1", "pos2",

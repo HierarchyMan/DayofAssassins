@@ -61,6 +61,14 @@ public final class CompassService {
                 .has(keys.wandItem, PersistentDataType.BYTE);
     }
 
+    public boolean isSpawnWand(ItemStack stack) {
+        if (stack == null || stack.getType().isAir() || !stack.hasItemMeta()) {
+            return false;
+        }
+        return stack.getItemMeta().getPersistentDataContainer()
+                .has(keys.spawnWandItem, PersistentDataType.BYTE);
+    }
+
     public boolean playerHasCompass(Player player) {
         for (ItemStack stack : player.getInventory().getContents()) {
             if (isCompass(stack)) {
@@ -105,6 +113,25 @@ public final class CompassService {
         meta.getPersistentDataContainer().set(keys.wandItem, PersistentDataType.BYTE, (byte) 1);
         if (config.wandCmd() > 0) {
             meta.setCustomModelData(config.wandCmd());
+        }
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    public ItemStack createSpawnWand() {
+        Material mat;
+        try {
+            mat = Material.valueOf(config.spawnWandMaterial().toUpperCase(Locale.ROOT));
+        } catch (Exception e) {
+            mat = Material.BLAZE_ROD;
+        }
+        ItemStack stack = new ItemStack(mat);
+        ItemMeta meta = stack.getItemMeta();
+        meta.displayName(TextUtil.component(lang.raw("spawn-wand.name"), Map.of()));
+        meta.lore(TextUtil.componentList(lang.rawList("spawn-wand.lore"), Map.of()));
+        meta.getPersistentDataContainer().set(keys.spawnWandItem, PersistentDataType.BYTE, (byte) 1);
+        if (config.spawnWandCmd() > 0) {
+            meta.setCustomModelData(config.spawnWandCmd());
         }
         stack.setItemMeta(meta);
         return stack;

@@ -49,12 +49,18 @@ public final class SqliteAccess {
                       phase TEXT,
                       ffa_teleported INTEGER NOT NULL DEFAULT 0,
                       ceremony_done INTEGER NOT NULL DEFAULT 0,
-                      paused INTEGER NOT NULL DEFAULT 0
+                      paused INTEGER NOT NULL DEFAULT 0,
+                      spawn_rtp_done INTEGER NOT NULL DEFAULT 0
                     )
                     """);
             // Upgrade older DBs that lack paused
             try {
                 st.executeUpdate("ALTER TABLE event_state ADD COLUMN paused INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            try {
+                st.executeUpdate("ALTER TABLE event_state ADD COLUMN spawn_rtp_done INTEGER NOT NULL DEFAULT 0");
             } catch (SQLException ignored) {
                 // column already exists
             }

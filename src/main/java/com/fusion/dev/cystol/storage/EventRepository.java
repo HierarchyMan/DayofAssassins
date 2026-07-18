@@ -17,7 +17,8 @@ public final class EventRepository {
             EventPhase phase,
             boolean ffaTeleported,
             boolean ceremonyDone,
-            boolean paused
+            boolean paused,
+            boolean spawnRtpDone
     ) {
     }
 
@@ -30,12 +31,12 @@ public final class EventRepository {
     public StoredEvent load() throws SQLException {
         return db.withConnection(c -> {
             try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT start_epoch, end_epoch, ffa_override_epoch, phase, ffa_teleported, ceremony_done, paused FROM event_state WHERE id = 1")) {
+                    "SELECT start_epoch, end_epoch, ffa_override_epoch, phase, ffa_teleported, ceremony_done, paused, spawn_rtp_done FROM event_state WHERE id = 1")) {
                 try (ResultSet rs = ps.executeQuery()) {
                     if (!rs.next()) {
-                        return new StoredEvent(null, null, null, EventPhase.IDLE, false, false, false);
+                        return new StoredEvent(null, null, null, EventPhase.IDLE, false, false, false, false);
                     }
-                    // paused column is created/migrated in SqliteAccess.openAndMigrate — always present
+                    // paused / spawn_rtp_done columns migrated in SqliteAccess.openAndMigrate
                     return new StoredEvent(
                             epoch(rs.getObject("start_epoch")),
                             epoch(rs.getObject("end_epoch")),
@@ -43,7 +44,8 @@ public final class EventRepository {
                             parsePhase(rs.getString("phase")),
                             rs.getInt("ffa_teleported") == 1,
                             rs.getInt("ceremony_done") == 1,
-                            rs.getInt("paused") == 1
+                            rs.getInt("paused") == 1,
+                            rs.getInt("spawn_rtp_done") == 1
                     );
                 }
             }
@@ -60,7 +62,8 @@ public final class EventRepository {
                       phase = ?,
                       ffa_teleported = ?,
                       ceremony_done = ?,
-                      paused = ?
+                      paused = ?,
+                      spawn_rtp_done = ?
                     WHERE id = 1
                     """)) {
                 setEpoch(ps, 1, state.start());
@@ -70,6 +73,7 @@ public final class EventRepository {
                 ps.setInt(5, state.ffaTeleported() ? 1 : 0);
                 ps.setInt(6, state.ceremonyDone() ? 1 : 0);
                 ps.setInt(7, state.paused() ? 1 : 0);
+                ps.setInt(8, state.spawnRtpDone() ? 1 : 0);
                 ps.executeUpdate();
             }
         });

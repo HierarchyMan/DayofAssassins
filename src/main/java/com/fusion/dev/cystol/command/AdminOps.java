@@ -104,6 +104,7 @@ public final class AdminOps {
         )));
         sender.sendMessage(lang.msg("admin.status.flags", Map.of(
                 "ffa_teleported", String.valueOf(eventManager.isFfaTeleported()),
+                "spawn_rtp_done", String.valueOf(eventManager.isSpawnRtpDone()),
                 "ceremony_done", String.valueOf(eventManager.isCeremonyDone())
         )));
         sender.sendMessage(lang.msg("admin.status.kills", Map.of(
@@ -115,6 +116,12 @@ public final class AdminOps {
                 "world", config.arenaWorld(),
                 "cuboid", formatCuboid(cuboid),
                 "center", centerLooksSet ? "set" : "default?"
+        )));
+        CuboidBounds spawnCuboid = config.spawnCuboid();
+        sender.sendMessage(lang.msg("admin.status.spawn", Map.of(
+                "configured", config.spawnZoneConfigured() ? "yes" : "no",
+                "world", config.spawnWorld(),
+                "cuboid", formatCuboid(spawnCuboid)
         )));
         if (config.arenaStoredFlat()) {
             CuboidBounds raw = config.arenaCuboidRaw();
@@ -196,6 +203,17 @@ public final class AdminOps {
             return;
         }
         sender.sendMessage(lang.msg("admin.forcetp-" + err));
+    }
+
+    public void forceSpawnRtp(CommandSender sender) {
+        String err = eventScheduler.forceSpawnHuntRtp();
+        if (err == null) {
+            sender.sendMessage(lang.msg("admin.forcespawnrtp-ok", Map.of(
+                    "count", String.valueOf(eventScheduler.lastForceSpawnRtpCount())
+            )));
+            return;
+        }
+        sender.sendMessage(lang.msg("admin.forcespawnrtp-" + err));
     }
 
     public void forceCeremony(CommandSender sender) {
@@ -295,8 +313,8 @@ public final class AdminOps {
 
     public void sendUsage(CommandSender sender) {
         sender.sendMessage(Component.text(
-                "/preciv admin <status|startnow|ffanow|endnow|pause|unpause|forcetp|forceceremony|resetflags|"
-                        + "eligible|clearkills|reload|phase|wand|set …>"
+                "/preciv admin <status|startnow|ffanow|endnow|pause|unpause|forcetp|forcespawnrtp|forceceremony|resetflags|"
+                        + "eligible|clearkills|reload|phase|wand|spawnwand|set …>"
         ));
     }
 }

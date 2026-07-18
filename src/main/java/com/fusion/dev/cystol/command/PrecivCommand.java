@@ -153,6 +153,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             case "ffanow" -> adminOps.ffaNow(sender);
             case "endnow" -> adminOps.endNow(sender);
             case "forcetp" -> adminOps.forceTp(sender);
+            case "forcespawnrtp" -> adminOps.forceSpawnRtp(sender);
             case "forceceremony" -> adminOps.forceCeremony(sender);
             case "resetflags" -> adminOps.resetFlags(sender);
             case "pause" -> adminOps.pause(sender);
@@ -177,6 +178,14 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
                 }
                 player.getInventory().addItem(compassService.createWand());
                 player.sendMessage(lang.msg("admin.wand-given"));
+            }
+            case "spawnwand" -> {
+                if (!(sender instanceof Player player)) {
+                    sender.sendMessage(lang.msg("admin.not-player"));
+                    return;
+                }
+                player.getInventory().addItem(compassService.createSpawnWand());
+                player.sendMessage(lang.msg("admin.spawnwand-given"));
             }
             case "set" -> {
                 if (args.length < 2) {

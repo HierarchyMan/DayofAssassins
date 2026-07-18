@@ -28,6 +28,8 @@ public final class EventManager {
     private final AtomicBoolean ffaTeleported = new AtomicBoolean(false);
     private final AtomicBoolean ceremonyDone = new AtomicBoolean(false);
     private final AtomicBoolean paused = new AtomicBoolean(false);
+    /** One-shot: hunt-kickoff spawn-cuboid BetterRTP mass dump completed for this schedule. */
+    private final AtomicBoolean spawnRtpDone = new AtomicBoolean(false);
 
     public EventManager(PluginConfig config, EventRepository repository, Logger logger) {
         this.config = config;
@@ -44,6 +46,7 @@ public final class EventManager {
             this.ffaTeleported.set(stored.ffaTeleported());
             this.ceremonyDone.set(stored.ceremonyDone());
             this.paused.set(stored.paused());
+            this.spawnRtpDone.set(stored.spawnRtpDone());
             refreshPhase(Instant.now());
             persist();
         } catch (SQLException e) {
@@ -147,6 +150,7 @@ public final class EventManager {
         config.setTimeStart(instant);
         ceremonyDone.set(false);
         ffaTeleported.set(false);
+        spawnRtpDone.set(false);
         pause(); // schedule edit freezes until host unpauses
     }
 
@@ -155,6 +159,7 @@ public final class EventManager {
         config.setTimeEnd(instant);
         ceremonyDone.set(false);
         ffaTeleported.set(false);
+        spawnRtpDone.set(false);
         pause();
     }
 
@@ -162,6 +167,7 @@ public final class EventManager {
         this.ffaOverride = instant;
         config.setTimeFfa(instant);
         ffaTeleported.set(false);
+        // FFA override alone does not re-arm spawn kickoff
         pause();
     }
 
@@ -178,6 +184,7 @@ public final class EventManager {
         config.setTimeFfa(times.ffaOverride());
         ceremonyDone.set(false);
         ffaTeleported.set(false);
+        spawnRtpDone.set(false);
         pause();
     }
 
@@ -194,6 +201,7 @@ public final class EventManager {
         config.setTimeFfa(times.ffaOverride());
         ceremonyDone.set(false);
         ffaTeleported.set(false);
+        spawnRtpDone.set(false);
         return unpause(now);
     }
 
@@ -229,6 +237,7 @@ public final class EventManager {
     public void clearFlags() {
         ffaTeleported.set(false);
         ceremonyDone.set(false);
+        spawnRtpDone.set(false);
         persist();
     }
 
@@ -242,6 +251,20 @@ public final class EventManager {
         persist();
     }
 
+    public boolean isSpawnRtpDone() {
+        return spawnRtpDone.get();
+    }
+
+    public void markSpawnRtpDone() {
+        spawnRtpDone.set(true);
+        persist();
+    }
+
+    public void clearSpawnRtpDone() {
+        spawnRtpDone.set(false);
+        persist();
+    }
+
     public void clearSchedule() {
         this.start = null;
         this.end = null;
@@ -251,6 +274,7 @@ public final class EventManager {
         config.setTimeFfa(null);
         ceremonyDone.set(false);
         ffaTeleported.set(false);
+        spawnRtpDone.set(false);
         pause();
     }
 
@@ -264,7 +288,8 @@ public final class EventManager {
     public void persist() {
         try {
             repository.save(new EventRepository.StoredEvent(
-                    start, end, ffaOverride, phase, ffaTeleported.get(), ceremonyDone.get(), paused.get()
+                    start, end, ffaOverride, phase,
+                    ffaTeleported.get(), ceremonyDone.get(), paused.get(), spawnRtpDone.get()
             ));
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to persist event state", e);
@@ -275,7 +300,8 @@ public final class EventManager {
         EventPhase p = refreshPhase(Objects.requireNonNull(now));
         try {
             repository.save(new EventRepository.StoredEvent(
-                    start, end, ffaOverride, p, ffaTeleported.get(), ceremonyDone.get(), paused.get()
+                    start, end, ffaOverride, p,
+                    ffaTeleported.get(), ceremonyDone.get(), paused.get(), spawnRtpDone.get()
             ));
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to persist phase", e);

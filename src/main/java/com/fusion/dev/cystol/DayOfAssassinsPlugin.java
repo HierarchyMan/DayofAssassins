@@ -2,6 +2,7 @@ package com.fusion.dev.cystol;
 
 import com.fusion.dev.cystol.arena.ArenaWandListener;
 import com.fusion.dev.cystol.arena.FfaSpawnService;
+import com.fusion.dev.cystol.arena.SpawnWandListener;
 import com.fusion.dev.cystol.ceremony.EndCeremonyService;
 import com.fusion.dev.cystol.command.AdminOps;
 import com.fusion.dev.cystol.command.EventCommand;
@@ -23,6 +24,9 @@ import com.fusion.dev.cystol.host.HostChatSession;
 import com.fusion.dev.cystol.host.HostGui;
 import com.fusion.dev.cystol.kill.KillService;
 import com.fusion.dev.cystol.kill.PvpManagerKillListener;
+import com.fusion.dev.cystol.teleport.BetterRtpBridge;
+import com.fusion.dev.cystol.teleport.SpawnHuntRtpJoinListener;
+import com.fusion.dev.cystol.teleport.SpawnHuntRtpService;
 import com.fusion.dev.cystol.teleport.TeleportLockListener;
 import com.fusion.dev.cystol.teleport.TeleportLockService;
 import com.fusion.dev.cystol.storage.EventRepository;
@@ -133,18 +137,27 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
                 this, compassService, compassGui, eventManager, lang, config, effects, tabDisplayService
         );
 
+        TeleportLockService teleportLock = new TeleportLockService(eventManager, config);
+        BetterRtpBridge betterRtpBridge = new BetterRtpBridge(getLogger());
+        betterRtpBridge.register(this);
+        SpawnHuntRtpService spawnHuntRtpService = new SpawnHuntRtpService(
+                this, eventManager, config, teleportLock, betterRtpBridge, getLogger()
+        );
+
         eventScheduler = new EventScheduler(
                 this, eventManager, config, lang, ffaSpawnService, compassListener,
-                ceremonyService, tabDisplayService, effects, getLogger()
+                ceremonyService, tabDisplayService, effects, spawnHuntRtpService, getLogger()
         );
 
         getServer().getPluginManager().registerEvents(compassListener, this);
         getServer().getPluginManager().registerEvents(new ArenaWandListener(compassService, config, lang), this);
+        getServer().getPluginManager().registerEvents(new SpawnWandListener(compassService, config, lang), this);
         getServer().getPluginManager().registerEvents(
                 new PvpManagerKillListener(eventManager, killService, config, effects, lang, getLogger()), this);
 
-        TeleportLockService teleportLock = new TeleportLockService(eventManager, config);
         getServer().getPluginManager().registerEvents(new TeleportLockListener(teleportLock, lang), this);
+        getServer().getPluginManager().registerEvents(
+                new SpawnHuntRtpJoinListener(this, spawnHuntRtpService), this);
 
         // Only hunters with a target, and only during scoring phases.
         getServer().getScheduler().runTaskTimer(this, () -> {
@@ -216,6 +229,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         addPerm(pm, "preciv.admin", "Admin setup commands", PermissionDefault.OP);
         addPerm(pm, "preciv.ffa.tp.bypass", "Skip FFA mass teleport", PermissionDefault.FALSE);
         addPerm(pm, "preciv.teleport.bypass", "Bypass hunt-phase teleport lock", PermissionDefault.OP);
+        addPerm(pm, "preciv.spawn.rtp.bypass", "Skip hunt spawn-cuboid BetterRTP dump", PermissionDefault.FALSE);
     }
 
     private static void addPerm(PluginManager pm, String name, String desc, PermissionDefault def) {

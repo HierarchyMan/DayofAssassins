@@ -24,3 +24,8 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: false
+    # Soft: hunt spawn dump RTP. Plugin still enables without it.
+    BetterRTP:
+      load: BEFORE
+      required: false
+      join-classpath: true

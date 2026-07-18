@@ -246,6 +246,32 @@ public final class PluginConfig {
         return cfg().getInt("wand.custom-model-data", 0);
     }
 
+    public String spawnWandMaterial() {
+        return cfg().getString("spawn-wand.material", "BLAZE_ROD");
+    }
+
+    public int spawnWandCmd() {
+        return cfg().getInt("spawn-wand.custom-model-data", 0);
+    }
+
+    /** When true, kickoff + join spawn-cuboid BetterRTP is active. */
+    public boolean huntRtpEnabled() {
+        return cfg().getBoolean("spawn.hunt-rtp.enabled", true);
+    }
+
+    /**
+     * BetterRTP destination world name. Empty → use the player's current world at dump time.
+     */
+    public String huntRtpWorld() {
+        String v = cfg().getString("spawn.hunt-rtp.world", "");
+        return v == null ? "" : v.trim();
+    }
+
+    /** Temporary teleport-lock allow window for plugin-initiated spawn RTP (milliseconds). */
+    public long huntRtpBypassMs() {
+        return Math.max(1_000L, cfg().getLong("spawn.hunt-rtp.bypass-ms", 60_000L));
+    }
+
     public boolean effectsEnabled() {
         return cfg().getBoolean("effects.enabled", true);
     }

@@ -55,7 +55,7 @@ arena:
     pitch: 0.0
 
 # Safe spawn zone for hunt-phase teleport lock (free TP while standing here).
-# Set with /preciv admin set spawnpos1 | spawnpos2 (or edit here). FFA has no TP lock.
+# Set with /preciv admin spawnwand (or set spawnpos1|spawnpos2). FFA has no TP lock.
 spawn:
   configured: false
   world: world
@@ -67,6 +67,14 @@ spawn:
     x: 0
     y: 64
     z: 0
+  # Hunt kickoff + join: BetterRTP players standing in this cuboid only.
+  # Kickoff is one-shot on COUNTDOWN/grace → HUNT. Join RTP only while live HUNT (not paused, not FFA).
+  hunt-rtp:
+    enabled: true
+    # BetterRTP destination world; empty = player's current world at dump time
+    world: ""
+    # Temporary teleport-lock allow window for plugin-initiated RTP (ms)
+    bypass-ms: 60000
 
 # Hunt only: block warps/homes/etc when outside spawn + arena. FFA = unlocked (kills zone-gated).
 teleport-lock:
@@ -105,6 +113,11 @@ compass:
   full-inv-actionbar-seconds: 60
 
 wand:
+  material: BLAZE_ROD
+  custom-model-data: 0
+
+# Separate item from arena wand (own PDC). Selects spawn cuboid corners.
+spawn-wand:
   material: BLAZE_ROD
   custom-model-data: 0
 

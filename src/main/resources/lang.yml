@@ -163,6 +163,13 @@ admin:
   spawnpos1-set: "&aSpawn zone corner 1 set to &f%x% %y% %z%"
   spawnpos2-set: "&aSpawn zone corner 2 set to &f%x% %y% %z%"
   wand-given: "&aArena wand given. Left-click corner 1, right-click corner 2."
+  spawnwand-given: "&aSpawn wand given. Left-click corner 1, right-click corner 2."
+  forcespawnrtp-ok: "&aForced spawn-zone hunt RTP for &f%count% &aplayer(s)."
+  forcespawnrtp-not-hunt: "&cNot in live hunt (or event is paused). Use &f/preciv admin startnow &cor unpause."
+  forcespawnrtp-disabled: "&cSpawn hunt RTP is disabled in config."
+  forcespawnrtp-unconfigured: "&cSpawn zone is not configured. Use &f/preciv admin spawnwand &cfirst."
+  forcespawnrtp-in-progress: "&cSpawn hunt RTP is already running."
+  forcespawnrtp-no-bridge: "&cBetterRTP is missing or failed to bind. Check the console."
   invalid-time: "&cInvalid time. Use &fyyyy/MM/dd HH:mm:ss &c(UTC) or &f-r 1d2h5m"
   not-player: "&cOnly players can do that."
   schedule-paused-hint: "&eSchedule updated — event is &cpaused&e. Use &f/preciv gui &eor &f/preciv admin unpause &ewhen ready."
@@ -175,9 +182,10 @@ admin:
     end: "&7End: &f%time% &8UTC"
     ffa: "&7Finale: &f%time% &8(%source%)"
     remaining: "&7Time left (this stage / clock): &f%countdown%"
-    flags: "&7One-shots: &ffinale TP done=%ffa_teleported% &7| &fceremony done=%ceremony_done%"
+    flags: "&7One-shots: &ffinale TP done=%ffa_teleported% &7| &fspawn RTP done=%spawn_rtp_done% &7| &fceremony done=%ceremony_done%"
     kills: "&7Kill rows: &f%rows% &7| Leader: &f%top_killer% &8(%top_kills%)"
     arena: "&7Arena: &f%world% &8| &7%cuboid% &8| center &f%center%"
+    spawn: "&7Spawn zone: &f%configured% &8| &f%world% &8| &7%cuboid%"
     # Shown when pos1/pos2 share the same Y — FFA auto-expands height at runtime
     arena-flat-y: "&eArena corners are coplanar (Y≈%raw_y%). FFA uses a ± half of %span% block vertical pad so standable spawns work. Prefer different Y on pos1/pos2 (floor + ceiling)."
     vanish: "&7Vanish check: &f%backend%"
@@ -192,7 +200,7 @@ admin:
   forcetp-failed: "&cFinale teleport failed. Check the console, then try again."
   forceceremony-ok: "&aForced end ceremony."
   forceceremony-not-ended: "&cEvent has not ended yet. Use &f/preciv admin endnow &cfirst."
-  resetflags-ok: "&aCleared one-shot markers (finale TP + ceremony)."
+  resetflags-ok: "&aCleared one-shot markers (finale TP + spawn RTP + ceremony)."
   eligible-header: "&eFinale TP candidates (&f%count%&e):"
   eligible-empty: "&7Nobody online is ready (survival, not vanished, no TP skip)."
   eligible-entry: "&7- &f%player%"
@@ -204,6 +212,13 @@ admin:
 wand:
   name: "&6Arena Selection Wand"
   lore:
+    - "&7Left-click: corner 1"
+    - "&7Right-click: corner 2"
+
+spawn-wand:
+  name: "&aSpawn Zone Wand"
+  lore:
+    - "&7Selects the hunt spawn cuboid"
     - "&7Left-click: corner 1"
     - "&7Right-click: corner 2"
 
