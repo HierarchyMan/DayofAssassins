@@ -11,7 +11,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Packaging regressions only: Paper loader layout, no Bukkit plugin.yml, no shaded SQLite natives.
+ * Packaging regressions only: Paper loader layout, no Bukkit plugin.yml,
+ * no shaded SQLite natives, no shaded SnakeYAML (Paper provides 2.2).
  */
 class PluginLibrariesJarTest {
 
@@ -31,11 +32,17 @@ class PluginLibrariesJarTest {
             assertTrue(jf.getEntry("paper-plugin.yml") != null);
             assertTrue(jf.getEntry("plugin.yml") == null);
             assertTrue(jf.getEntry("com/fusion/dev/cystol/DayOfAssassinsLoader.class") != null);
+            assertTrue(jf.getEntry("com/fusion/dev/cystol/config/yaml/CommentPreservingYaml.class") != null);
             boolean hasNative = jf.stream().anyMatch(e ->
                     e.getName().startsWith("org/sqlite/native/")
                             || e.getName().endsWith("sqlitejdbc.dll")
                             || e.getName().endsWith("libsqlitejdbc.so"));
             assertFalse(hasNative, "sqlite natives must not be shaded");
+            // SnakeYAML is provided by Paper (libraries/org/yaml/snakeyaml/2.2).
+            // Shading a second copy risks NoSuchMethodError / comment API skew.
+            boolean hasSnakeYaml = jf.stream().anyMatch(e ->
+                    e.getName().startsWith("org/yaml/snakeyaml/"));
+            assertFalse(hasSnakeYaml, "snakeyaml must not be shaded — use Paper's 2.2");
         }
         assertTrue(Files.size(jar) < 3_000_000L, "jar too large");
     }

@@ -1,5 +1,6 @@
 package com.fusion.dev.cystol.config;
 
+import com.fusion.dev.cystol.config.yaml.ManagedYamlFiles;
 import com.fusion.dev.cystol.util.TextUtil;
 import net.kyori.adventure.text.Component;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -30,10 +31,9 @@ public final class Lang {
     public void load() {
         lock.writeLock().lock();
         try {
+            // Create if missing + insert any new jar keys without wiping comments/values.
+            ManagedYamlFiles.update(plugin, "lang.yml");
             langFile = new File(plugin.getDataFolder(), "lang.yml");
-            if (!langFile.exists()) {
-                plugin.saveResource("lang.yml", false);
-            }
             lang = YamlConfiguration.loadConfiguration(langFile);
             InputStream def = plugin.getResource("lang.yml");
             if (def != null) {

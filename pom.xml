@@ -74,6 +74,16 @@
             <version>3.47.2.0</version>
             <scope>provided</scope>
         </dependency>
+        <!--
+          SnakeYAML 2.2 (Paper ships this on the server). Used for comment-preserving
+          defaults merge + config path patches. Not shaded — provided at runtime by Paper.
+        -->
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>2.2</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>

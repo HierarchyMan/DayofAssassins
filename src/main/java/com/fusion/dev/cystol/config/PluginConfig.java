@@ -1,6 +1,7 @@
 package com.fusion.dev.cystol.config;
 
 import com.fusion.dev.cystol.arena.CuboidBounds;
+import com.fusion.dev.cystol.config.yaml.ManagedYamlFiles;
 import com.fusion.dev.cystol.util.TimeUtil;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -9,12 +10,15 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Thread-safe cached config reads. Writes go through synchronized save helpers.
+ * Thread-safe cached config reads. Writes go through comment-preserving SnakeYAML patches
+ * (never Bukkit {@code saveConfig()}, which would strip comments).
  */
 public final class PluginConfig {
 
@@ -32,6 +36,8 @@ public final class PluginConfig {
     public void reload() {
         lock.writeLock().lock();
         try {
+            // Merge jar defaults for any keys added in new plugin versions (comments kept).
+            ManagedYamlFiles.update(plugin, "config.yml");
             plugin.reloadConfig();
             this.config = plugin.getConfig();
         } finally {
@@ -40,7 +46,7 @@ public final class PluginConfig {
     }
 
     public void loadDefaults() {
-        plugin.saveDefaultConfig();
+        // reload() merges jar defaults (comment-preserving) then loads Bukkit view
         reload();
     }
 
@@ -356,42 +362,30 @@ public final class PluginConfig {
     }
 
     public void setPos1(double x, double y, double z) {
-        lock.writeLock().lock();
-        try {
-            config.set("arena.pos1.x", x);
-            config.set("arena.pos1.y", y);
-            config.set("arena.pos1.z", z);
-            plugin.saveConfig();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("arena.pos1.x", x);
+        values.put("arena.pos1.y", y);
+        values.put("arena.pos1.z", z);
+        writeValues(values);
     }
 
     public void setPos2(double x, double y, double z) {
-        lock.writeLock().lock();
-        try {
-            config.set("arena.pos2.x", x);
-            config.set("arena.pos2.y", y);
-            config.set("arena.pos2.z", z);
-            plugin.saveConfig();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("arena.pos2.x", x);
+        values.put("arena.pos2.y", y);
+        values.put("arena.pos2.z", z);
+        writeValues(values);
     }
 
     public void setCenter(String world, double x, double y, double z, float yaw, float pitch) {
-        lock.writeLock().lock();
-        try {
-            config.set("arena.world", world);
-            config.set("arena.centerspawn.x", x);
-            config.set("arena.centerspawn.y", y);
-            config.set("arena.centerspawn.z", z);
-            config.set("arena.centerspawn.yaw", yaw);
-            config.set("arena.centerspawn.pitch", pitch);
-            plugin.saveConfig();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("arena.world", world);
+        values.put("arena.centerspawn.x", x);
+        values.put("arena.centerspawn.y", y);
+        values.put("arena.centerspawn.z", z);
+        values.put("arena.centerspawn.yaw", (double) yaw);
+        values.put("arena.centerspawn.pitch", (double) pitch);
+        writeValues(values);
     }
 
     public void setArenaWorld(String world) {
@@ -399,20 +393,24 @@ public final class PluginConfig {
     }
 
     private void writeString(String path, String value) {
-        lock.writeLock().lock();
-        try {
-            config.set(path, value);
-            plugin.saveConfig();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        writeValue(path, value);
     }
 
     private void writeValue(String path, Object value) {
+        Map<String, Object> single = new LinkedHashMap<>();
+        single.put(path, value);
+        writeValues(single);
+    }
+
+    /**
+     * Comment-preserving multi-key write, then refresh the Bukkit view.
+     */
+    private void writeValues(Map<String, ?> pathValues) {
         lock.writeLock().lock();
         try {
-            config.set(path, value);
-            plugin.saveConfig();
+            ManagedYamlFiles.patchConfig(plugin, pathValues);
+            plugin.reloadConfig();
+            this.config = plugin.getConfig();
         } finally {
             lock.writeLock().unlock();
         }
@@ -538,29 +536,21 @@ public final class PluginConfig {
     }
 
     public void setSpawnPos1(double x, double y, double z) {
-        lock.writeLock().lock();
-        try {
-            config.set("spawn.pos1.x", x);
-            config.set("spawn.pos1.y", y);
-            config.set("spawn.pos1.z", z);
-            config.set("spawn.configured", true);
-            plugin.saveConfig();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("spawn.pos1.x", x);
+        values.put("spawn.pos1.y", y);
+        values.put("spawn.pos1.z", z);
+        values.put("spawn.configured", true);
+        writeValues(values);
     }
 
     public void setSpawnPos2(double x, double y, double z) {
-        lock.writeLock().lock();
-        try {
-            config.set("spawn.pos2.x", x);
-            config.set("spawn.pos2.y", y);
-            config.set("spawn.pos2.z", z);
-            config.set("spawn.configured", true);
-            plugin.saveConfig();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("spawn.pos2.x", x);
+        values.put("spawn.pos2.y", y);
+        values.put("spawn.pos2.z", z);
+        values.put("spawn.configured", true);
+        writeValues(values);
     }
 
     public ConfigurationSection effectSection(String path) {

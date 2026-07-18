@@ -13,6 +13,7 @@ import com.fusion.dev.cystol.compass.CompassListener;
 import com.fusion.dev.cystol.compass.CompassService;
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
+import com.fusion.dev.cystol.config.yaml.ManagedYamlFiles;
 import com.fusion.dev.cystol.display.TabDisplayService;
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
@@ -73,6 +74,8 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
     @Override
     public void onLoad() {
         registerPermissions();
+        // All data-folder YAMLs: create if missing, merge new jar keys, preserve comments.
+        ManagedYamlFiles.updateAll(this);
         config = new PluginConfig(this);
         config.loadDefaults();
         lang = new Lang(this);
