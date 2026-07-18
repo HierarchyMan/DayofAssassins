@@ -1,6 +1,7 @@
 package com.fusion.dev.cystol.kill;
 
 import com.fusion.dev.cystol.arena.CuboidBounds;
+import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
@@ -16,6 +17,7 @@ import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.Method;
 import java.time.Instant;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -32,6 +34,7 @@ public final class PvpManagerKillListener implements Listener {
     private final KillService killService;
     private final PluginConfig config;
     private final EffectService effects;
+    private final Lang lang;
     private final Logger logger;
     private Object pvpManager;
     private Method getPlayerMethod;
@@ -43,12 +46,14 @@ public final class PvpManagerKillListener implements Listener {
             KillService killService,
             PluginConfig config,
             EffectService effects,
+            Lang lang,
             Logger logger
     ) {
         this.eventManager = eventManager;
         this.killService = killService;
         this.config = config;
         this.effects = effects;
+        this.lang = lang;
         this.logger = logger;
         hookPvpManager();
     }
@@ -166,6 +171,19 @@ public final class PvpManagerKillListener implements Listener {
         }
         killService.creditKill(killer.getUniqueId(), killer.getName());
         effects.play(killer, EffectService.EffectKey.KILL_CREDITED, victim.getLocation());
+
+        Map<String, String> placeholders = Map.of(
+                "killer", killer.getName(),
+                "victim", victim.getName(),
+                "kills", String.valueOf(killService.getKills(killer.getUniqueId()))
+        );
+        effects.showTitle(
+                killer,
+                EffectService.EffectKey.KILL_CREDITED,
+                lang.msg("kill.credited-title", placeholders),
+                lang.msg("kill.credited-subtitle", placeholders)
+        );
+        effects.playToAllExcept(killer, EffectService.EffectKey.KILL_GLOBAL);
     }
 
     private boolean isInArena(Location loc) {

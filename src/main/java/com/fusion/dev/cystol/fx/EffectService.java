@@ -1,12 +1,15 @@
 package com.fusion.dev.cystol.fx;
 
 import com.fusion.dev.cystol.config.PluginConfig;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Locale;
 import java.util.Map;
@@ -21,6 +24,7 @@ public final class EffectService {
         MENU_PAGE("effects.menu.page-turn"),
         MENU_DENY("effects.menu.deny"),
         KILL_CREDITED("effects.kill.credited"),
+        KILL_GLOBAL("effects.kill.global"),
         HUNT_START("effects.hunt.start"),
         FFA_ANNOUNCE("effects.ffa.announce"),
         FFA_FINAL_COUNTDOWN("effects.ffa.final-countdown"),
@@ -106,6 +110,30 @@ public final class EffectService {
         }
     }
 
+    /**
+     * Show a title to a player using this effect's configured title timings.
+     * The title/subtitle text (with placeholders already applied) is supplied by the caller
+     * so it can live in lang.yml for translation.
+     *
+     * @param title    main title line (already placeholder-resolved)
+     * @param subtitle subtitle line (already placeholder-resolved)
+     */
+    public void showTitle(Player player, EffectKey key, Component title, Component subtitle) {
+        if (player == null || key == null) {
+            return;
+        }
+        EffectPlan plan = plan(key);
+        if (!plan.hasTitle()) {
+            return;
+        }
+        Title.Times times = Title.Times.times(
+                Duration.ofMillis(plan.titleFadeInMs()),
+                Duration.ofMillis(plan.titleStayMs()),
+                Duration.ofMillis(plan.titleFadeOutMs())
+        );
+        player.showTitle(Title.title(title, subtitle, times));
+    }
+
     private void playSound(Player player, EffectPlan plan, Float pitchOverride) {
         String name = plan.soundName();
         float volume = plan.volume();
@@ -149,6 +177,19 @@ public final class EffectService {
 
     public void playToAll(EffectKey key) {
         for (Player p : Bukkit.getOnlinePlayers()) {
+            play(p, key);
+        }
+    }
+
+    /**
+     * Play an effect to every online player except {@code excluded}
+     * (e.g. a global kill sound heard by everyone but the killer).
+     */
+    public void playToAllExcept(Player excluded, EffectKey key) {
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (excluded != null && p.getUniqueId().equals(excluded.getUniqueId())) {
+                continue;
+            }
             play(p, key);
         }
     }

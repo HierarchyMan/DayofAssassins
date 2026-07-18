@@ -105,6 +105,12 @@ killtop:
   entry: "&e#%position% &f%player% &7— &c%kills% kills"
   empty: "&7No kills yet."
 
+kill:
+  # Title shown to the killer after a credited kill.
+  # Placeholders: %killer% (killer name), %victim% (victim name), %kills% (killer's new total)
+  credited-title: "&c&lAssassination!"
+  credited-subtitle: "&7You eliminated &f%victim% &7— &c%kills% &7kills"
+
 ffa:
   announce-title: "&c&lFinal deathmatch"
   announce-subtitle: "&7Begins in &f%countdown%"

@@ -15,10 +15,14 @@ public record EffectPlan(
         int particleCount,
         double offsetX,
         double offsetY,
-        double offsetZ
+        double offsetZ,
+        boolean titleEnabled,
+        int titleFadeInMs,
+        int titleStayMs,
+        int titleFadeOutMs
 ) {
     public static EffectPlan disabled() {
-        return new EffectPlan(false, false, "", 0f, 0f, false, "", 0, 0, 0, 0);
+        return new EffectPlan(false, false, "", 0f, 0f, false, "", 0, 0, 0, 0, false, 0, 0, 0);
     }
 
     public boolean hasSound() {
@@ -27,5 +31,9 @@ public record EffectPlan(
 
     public boolean hasParticle() {
         return shouldPlay && particleEnabled && particleName != null && !particleName.isBlank();
+    }
+
+    public boolean hasTitle() {
+        return shouldPlay && titleEnabled;
     }
 }

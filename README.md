@@ -26,7 +26,7 @@ SETUP → COUNTDOWN → HUNT → FFA ANNOUNCE → RING TP → END CEREMONY
 | **Spawn safe zone** | Admins mark a spawn cuboid; players inside it are exempt from the hunt teleport lock |
 | **SQLite storage** | Event times/phase, kills, metrics — survives restarts mid-event |
 | **Fully configurable text** | All messages, item lore, menu titles in `lang.yml` |
-| **Effects** | Sounds/particles for compass, menus, kills, FFA, end (config toggles) |
+| **Effects** | Sounds/particles for compass, menus, kills, FFA, end (config toggles); kill title to killer + global kill sound |
 | **Paper-only plugin** | `paper-plugin.yml` + library loader (lean jar; SQLite downloaded by Paper) |
 
 ### Explicitly not included
@@ -277,7 +277,7 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 | `tab.scoreboard.empty-name` / `empty-kills` | `—` / `0` | Empty rank slots |
 | `tab.scoreboard.lines` | top-3 + phase row | Injected templates (strings from offset, or maps with absolute `line:`) |
 | `tab.bossbar.enabled` | true | Event bossbar via TAB (**adds** a bar; does not replace other TAB bars) |
-| `effects.*` | enabled | Sounds/particles per action |
+| `effects.*` | enabled | Sounds/particles per action; `kill.credited.title` (fade timings) + `kill.global` sound (everyone but killer) |
 
 **Scoreboard inject (defaults):** lines at offset 3–6 — `#1` / `#2` / `#3` kill leaders + phase countdown.  
 Does **not** create or `showScoreboard` a private board; only overwrites the configured rows on whatever TAB layout the player already has, and restores them when the event UI clears.
@@ -317,11 +317,32 @@ Defaults in `config.yml` include FX for:
 
 - Compass open GUI  
 - Menu select / page / deny  
-- Kill credited  
+- Kill credited (sound + particle **and** a title to the killer)  
+- Global kill sound — a separate `effects.kill.global` sound played to **everyone except the killer** (default: `minecraft:entity.ender_dragon.growl`)  
 - FFA announce & teleport  
 - End normal & top-3 heroic  
 
-Toggle globally with `effects.enabled`, or per-effect sound/particle `enabled` flags.
+Toggle globally with `effects.enabled`, or per-effect sound/particle `enabled` flags. Each effect may also carry a `title:` block (fade timings in ms); the actual title/subtitle text lives in `lang.yml`.
+
+```yaml
+effects:
+  kill:
+    credited:
+      sound:   { enabled: true, sound: "minecraft:entity.player.levelup", volume: 1.0, pitch: 1.0 }
+      particle: { enabled: true, particle: SOUL, count: 20 }
+      title:   { enabled: true, fade-in: 250, stay: 1500, fade-out: 500 }  # text in lang.yml
+    global:    # heard by everyone BUT the killer
+      sound:   { enabled: true, sound: "minecraft:entity.ender_dragon.growl", volume: 1.0, pitch: 1.0 }
+      particle: { enabled: false }
+```
+
+**Kill title placeholders (lang.yml `kill.credited-title` / `kill.credited-subtitle`):**
+
+| Placeholder | Meaning |
+|-------------|---------|
+| `%killer%` | Killer’s name |
+| `%victim%` | Victim’s name |
+| `%kills%`  | Killer’s new total kill count (after this kill) |
 
 ---
 

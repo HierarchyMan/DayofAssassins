@@ -62,7 +62,27 @@ public final class EffectResolver {
             oz = effectRoot.getDouble("particle.offset-z", 0.25);
         }
 
-        boolean shouldPlay = soundEnabled || particleEnabled;
+        ConfigurationSection title = effectRoot.getConfigurationSection("title");
+        boolean titleEnabled = false;
+        int fadeIn = 250;
+        int stay = 1500;
+        int fadeOut = 500;
+        if (title != null) {
+            titleEnabled = title.getBoolean("enabled", false);
+            fadeIn = title.getInt("fade-in", 250);
+            stay = title.getInt("stay", 1500);
+            fadeOut = title.getInt("fade-out", 500);
+        } else if (effectRoot.contains("title.enabled")
+                || effectRoot.contains("title.fade-in")
+                || effectRoot.contains("title.stay")
+                || effectRoot.contains("title.fade-out")) {
+            titleEnabled = effectRoot.getBoolean("title.enabled", false);
+            fadeIn = effectRoot.getInt("title.fade-in", 250);
+            stay = effectRoot.getInt("title.stay", 1500);
+            fadeOut = effectRoot.getInt("title.fade-out", 500);
+        }
+
+        boolean shouldPlay = soundEnabled || particleEnabled || titleEnabled;
         return new EffectPlan(
                 shouldPlay,
                 soundEnabled,
@@ -72,7 +92,9 @@ public final class EffectResolver {
                 particleEnabled,
                 particleName,
                 count,
-                ox, oy, oz
+                ox, oy, oz,
+                titleEnabled,
+                fadeIn, stay, fadeOut
         );
     }
 
@@ -109,10 +131,19 @@ public final class EffectResolver {
             double oy = config.getDouble(base + ".offset-y", config.getDouble(base + ".particle.offset-y", 0.3));
             double oz = config.getDouble(base + ".offset-z", config.getDouble(base + ".particle.offset-z", 0.25));
 
-            boolean shouldPlay = soundEnabled || particleEnabled;
+            boolean titleEnabled = config.contains(base + ".title.enabled")
+                    || config.contains(base + ".title.fade-in")
+                    || config.contains(base + ".title.stay")
+                    || config.contains(base + ".title.fade-out");
+            int fadeIn = (int) config.getDouble(base + ".title.fade-in", 250);
+            int stay = (int) config.getDouble(base + ".title.stay", 1500);
+            int fadeOut = (int) config.getDouble(base + ".title.fade-out", 500);
+
+            boolean shouldPlay = soundEnabled || particleEnabled || titleEnabled;
             return new EffectPlan(
                     shouldPlay, soundEnabled, soundName, volume, pitch,
-                    particleEnabled, particleName, count, ox, oy, oz
+                    particleEnabled, particleName, count, ox, oy, oz,
+                    titleEnabled, fadeIn, stay, fadeOut
             );
         }
         return resolve(true, config.getConfigurationSection(base));

@@ -201,6 +201,21 @@ effects:
         enabled: true
         particle: SOUL
         count: 20
+      # Title shown to the killer (text lives in lang.yml: kill.credited-title / kill.credited-subtitle)
+      title:
+        enabled: true
+        fade-in: 250
+        stay: 1500
+        fade-out: 500
+    # Sound heard by everyone EXCEPT the killer (default: dragon roar)
+    global:
+      sound:
+        enabled: true
+        sound: "minecraft:entity.ender_dragon.growl"
+        volume: 1.0
+        pitch: 1.0
+      particle:
+        enabled: false
   ffa:
     announce:
       sound:

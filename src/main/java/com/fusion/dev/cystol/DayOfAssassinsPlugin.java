@@ -138,7 +138,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(compassListener, this);
         getServer().getPluginManager().registerEvents(new ArenaWandListener(compassService, config, lang), this);
         getServer().getPluginManager().registerEvents(
-                new PvpManagerKillListener(eventManager, killService, config, effects, getLogger()), this);
+                new PvpManagerKillListener(eventManager, killService, config, effects, lang, getLogger()), this);
 
         TeleportLockService teleportLock = new TeleportLockService(eventManager, config);
         getServer().getPluginManager().registerEvents(new TeleportLockListener(teleportLock, lang), this);
