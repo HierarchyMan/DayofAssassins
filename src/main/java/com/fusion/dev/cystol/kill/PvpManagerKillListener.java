@@ -169,6 +169,25 @@ public final class PvpManagerKillListener implements Listener {
         )) {
             return;
         }
+        // Anti-farm: same killer→victim limited credits per window (memory only)
+        if (config.killAntiFarmEnabled()) {
+            int max = config.killAntiFarmMaxCreditsPerVictim();
+            long windowMs = config.killAntiFarmWindowSeconds() * 1000L;
+            boolean allowed = killService.farmGuard().tryRegisterCredit(
+                    killer.getUniqueId(), victim.getUniqueId(), max, windowMs
+            );
+            if (!allowed) {
+                long remainMs = killService.farmGuard().remainingBlockMs(
+                        killer.getUniqueId(), victim.getUniqueId(), max, windowMs
+                );
+                long remainSec = Math.max(1L, (remainMs + 999L) / 1000L);
+                killer.sendMessage(lang.msg("kill.anti-farm", Map.of(
+                        "victim", victim.getName(),
+                        "seconds", String.valueOf(remainSec)
+                )));
+                return;
+            }
+        }
         killService.creditKill(killer.getUniqueId(), killer.getName());
         effects.play(killer, EffectService.EffectKey.KILL_CREDITED, victim.getLocation());
 

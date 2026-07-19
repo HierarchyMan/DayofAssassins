@@ -21,6 +21,7 @@ import java.util.Map;
  * Hunt-only movement lock layers:
  * <ul>
  *   <li>Cancel blocked TP commands (incl. {@code /spawn}) — LOWEST so we win before other plugins</li>
+ *   <li>Optional {@code /rtp} override (our BetterRTP + cooldown) during HUNT</li>
  *   <li>Cancel non-exempt teleports (esp. cross-world hub TPs)</li>
  *   <li>Revert illegal world changes (not cancellable — snap back next tick)</li>
  *   <li>Consume short temp RTP allow when the plugin TP lands</li>
@@ -31,21 +32,45 @@ public final class TeleportLockListener implements Listener {
     private final JavaPlugin plugin;
     private final TeleportLockService service;
     private final Lang lang;
+    private final RtpCommandService rtpCommand;
 
     public TeleportLockListener(JavaPlugin plugin, TeleportLockService service, Lang lang) {
+        this(plugin, service, lang, null);
+    }
+
+    public TeleportLockListener(
+            JavaPlugin plugin,
+            TeleportLockService service,
+            Lang lang,
+            RtpCommandService rtpCommand
+    ) {
         this.plugin = plugin;
         this.service = service;
         this.lang = lang;
+        this.rtpCommand = rtpCommand;
     }
 
     /**
-     * LOWEST: intercept blacklisted commands before Essentials/etc. can run them.
-     * Temp RTP allow does not open commands. Message: {@code teleport.command-blocked}.
+     * LOWEST + ignoreCancelled=false: own the command before Essentials/BetterRTP, even if
+     * another LOWEST listener already cancelled. When RTP override is on during HUNT,
+     * {@code /rtp} is handled by us (not the generic blocklist message).
      */
-    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
         String raw = event.getMessage();
+        String label = TeleportLockService.primaryCommandLabel(raw);
+
+        // Hunt /rtp override: always cancel native /rtp and run our path once
+        if (rtpCommand != null && rtpCommand.shouldIntercept(label)) {
+            event.setCancelled(true);
+            if (service.isDebug()) {
+                service.debug(player.getName() + " cmd rtp-override raw=" + raw);
+            }
+            rtpCommand.handle(player);
+            return;
+        }
+
         boolean block = service.shouldBlockCommand(player, raw);
         if (service.isDebug()) {
             service.debug(player.getName() + " cmd " + service.explainCommand(player, raw)
@@ -55,7 +80,6 @@ public final class TeleportLockListener implements Listener {
             return;
         }
         event.setCancelled(true);
-        String label = TeleportLockService.primaryCommandLabel(raw);
         if (label.isEmpty()) {
             label = "command";
         }
@@ -79,6 +103,11 @@ public final class TeleportLockListener implements Listener {
                 service.rememberSafeLocation(player, to);
             } else if (from != null) {
                 service.rememberSafeLocation(player, from);
+            }
+            // Portal-family: trust world-change even if last-safe races
+            if (TeleportLockService.isExemptCause(cause)
+                    && TeleportLockService.isPortalFamilyCause(cause)) {
+                service.markTrustedWorldChangeTicks(player, 40L);
             }
             // Consume short RTP allow as soon as the plugin TP actually lands
             if (service.hasTemporaryAllow(player) && TeleportLockService.isPluginStyleCause(cause)) {
@@ -177,5 +206,8 @@ public final class TeleportLockListener implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         service.clearPlayer(event.getPlayer());
+        if (rtpCommand != null) {
+            rtpCommand.clearPlayer(event.getPlayer().getUniqueId());
+        }
     }
 }

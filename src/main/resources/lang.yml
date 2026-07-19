@@ -16,6 +16,13 @@ teleport:
   # %command% = primary label without slash (e.g. spawn, home)
   command-blocked: "&cYou can't use &f/%command% &cduring the hunt."
 
+rtp:
+  # Our /rtp override during hunt (not the generic command-blocked line)
+  command-disabled: "&cRandom teleport is turned off during the hunt."
+  command-cooldown: "&c/rtp is on cooldown — try again in &f%time%&c."
+  command-ok: "&aTeleporting you somewhere random…"
+  command-failed: "&cCouldn't random teleport right now. Try again in a moment."
+
 event:
   description:
     - "&c&lDay of Assassins"
@@ -152,6 +159,8 @@ kill:
   # Placeholders: %killer% (killer name), %victim% (victim name), %kills% (killer's new total)
   credited-title: "&c&lAssassination!"
   credited-subtitle: "&7You eliminated &f%victim% &7— &c%kills% &7kills"
+  # Same-victim farm block (does not credit). %victim% %seconds%
+  anti-farm: "&cKill on &f%victim% &cdoesn't count — same target too soon. Wait &f%seconds%s&c."
 
 ffa:
   announce-title: "&c&lFinal deathmatch"
@@ -243,6 +252,10 @@ admin:
   eligible-entry: "&7- &f%player%"
   clearkills-confirm: "&cThis wipes all kill scores. Run &f/preciv admin clearkills confirm &cto proceed."
   clearkills-ok: "&aAll kill scores cleared."
+  setkills-usage: "&cUsage: /preciv admin setkills <player> <amount>"
+  setkills-ok: "&aSet &f%player% &akills to &f%kills%&a."
+  setkills-not-found: "&cPlayer not found: &f%player%"
+  setkills-invalid-amount: "&cAmount must be a non-negative whole number."
   phase-usage: "&cUsage: /preciv admin phase <idle|paused|countdown|hunt|ffa|ended>"
   phase-ok: "&aSchedule adjusted. Stage: &f%phase%"
 

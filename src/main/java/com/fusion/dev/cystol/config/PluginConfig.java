@@ -708,6 +708,57 @@ public final class PluginConfig {
             "mv", "mvtp", "mvp", "world", "worlds", "server"
     };
 
+    // --- Hunt respawn relocate (home → else BetterRTP) ---
+
+    /** When true, HUNT deaths relocate: Essentials home if set, else force BetterRTP. */
+    public boolean respawnRelocateEnabled() {
+        return cfg().getBoolean("spawn.respawn-relocate.enabled", true);
+    }
+
+    /** Prefer Essentials home over BetterRTP when a home exists. */
+    public boolean respawnPreferEssentialsHome() {
+        return cfg().getBoolean("spawn.respawn-relocate.prefer-essentials-home", true);
+    }
+
+    // --- /rtp command override (hunt only) ---
+
+    /**
+     * When true during HUNT, intercept {@code /rtp} and ignore the teleport-lock blocklist for it.
+     */
+    public boolean rtpCommandOverride() {
+        return cfg().getBoolean("rtp.command-override", true);
+    }
+
+    /**
+     * When override is true: if false, cancel {@code /rtp} with disabled message;
+     * if true, run our BetterRTP force path.
+     */
+    public boolean rtpCommandAllow() {
+        return cfg().getBoolean("rtp.allow-command", true);
+    }
+
+    /** Cooldown seconds for our /rtp override only (not kickoff/respawn). */
+    public long rtpCommandCooldownSeconds() {
+        return Math.max(0L, cfg().getLong("rtp.command-cooldown-seconds", 300L));
+    }
+
+    // --- Kill anti-farm (memory only) ---
+
+    public boolean killAntiFarmEnabled() {
+        return cfg().getBoolean("kills.anti-farm.enabled", true);
+    }
+
+    /**
+     * Max credited kills on the same victim inside the window (default 1 = first counts, second blocked).
+     */
+    public int killAntiFarmMaxCreditsPerVictim() {
+        return Math.max(0, cfg().getInt("kills.anti-farm.max-credits-per-victim", 1));
+    }
+
+    public long killAntiFarmWindowSeconds() {
+        return Math.max(0L, cfg().getLong("kills.anti-farm.window-seconds", 300L));
+    }
+
     public String spawnWorld() {
         return cfg().getString("spawn.world", "world");
     }

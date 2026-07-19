@@ -166,6 +166,8 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             adminOps.sendUsage(sender);
             return;
         }
+        // Paper: this switch alone is not enough. New admin actions must also be registered
+        // as Brigadier nodes in PaperCommandRegistrar (+ AdminCommands lists). See class javadoc there.
         String action = args[0].toLowerCase(Locale.ROOT);
         switch (action) {
             case "status" -> adminOps.status(sender);
@@ -182,6 +184,13 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             case "clearkills" -> {
                 boolean confirm = args.length >= 2 && args[1].equalsIgnoreCase("confirm");
                 adminOps.clearKills(sender, confirm);
+            }
+            case "setkills" -> {
+                if (args.length < 3) {
+                    sender.sendMessage(lang.msg("admin.setkills-usage"));
+                } else {
+                    adminOps.setKills(sender, args[1], args[2]);
+                }
             }
             case "reload" -> adminOps.reload(sender);
             case "phase" -> {

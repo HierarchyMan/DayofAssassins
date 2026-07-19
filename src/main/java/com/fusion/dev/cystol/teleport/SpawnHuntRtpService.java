@@ -321,6 +321,24 @@ public final class SpawnHuntRtpService {
         if (!isEligibleForHuntRtp(player)) {
             return false;
         }
+        return forceRtpPlayer(player);
+    }
+
+    /**
+     * Force BetterRTP for one player — no spawn/arena zone check.
+     * Used by hunt respawn relocate and {@code /rtp} command override.
+     * Still requires BetterRTP available; does not require {@code hunt-rtp.enabled}
+     * (respawn / command are separate product paths; zone eviction still gates on enabled).
+     *
+     * @return true if request was handed to BetterRTP
+     */
+    public boolean forceRtpPlayer(Player player) {
+        if (player == null || !player.isOnline()) {
+            return false;
+        }
+        if (!betterRtp.isAvailable()) {
+            return false;
+        }
         return rtpPlayerUnchecked(player);
     }
 
@@ -344,7 +362,7 @@ public final class SpawnHuntRtpService {
         if (!betterRtp.isAvailable()) {
             return;
         }
-        boolean ok = rtpPlayerUnchecked(player);
+        boolean ok = forceRtpPlayer(player);
         if (ok) {
             String tag = reason == null || reason.isBlank() ? "event" : reason;
             logger.info("Hunt spawn/arena RTP (" + tag + ") for " + player.getName());
@@ -434,7 +452,7 @@ public final class SpawnHuntRtpService {
                 if (!isEligibleForHuntRtp(p)) {
                     continue;
                 }
-                rtpPlayerUnchecked(p);
+                forceRtpPlayer(p);
             }
             index[0] = end;
             if (index[0] >= ordered.size()) {

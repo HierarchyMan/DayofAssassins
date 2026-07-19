@@ -1,6 +1,7 @@
 package com.fusion.dev.cystol.command;
 
 import com.mojang.brigadier.Command;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.suggestion.Suggestions;
@@ -9,7 +10,9 @@ import com.mojang.brigadier.tree.LiteralCommandNode;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents;
+import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.time.Instant;
@@ -25,6 +28,24 @@ import java.util.function.Supplier;
  * Paper Brigadier registration. Uses a <strong>literal tree</strong> so tab-complete works.
  * A single greedy {@code args} string does <em>not</em> suggest root subcommands after
  * {@code /preciv} — the client only asks the active node for suggestions.
+ *
+ * <h2>ADDING A COMMAND — always do all of this or it will silently not work</h2>
+ * <ol>
+ *   <li><b>Register here</b> — every player-facing path needs a Brigadier
+ *       {@code literal(...)} / {@code argument(...)} node with {@code .executes(...)}.
+ *       Paper only dispatches nodes in this tree. A {@code switch} case in
+ *       {@link PrecivCommand} alone does <em>nothing</em>.</li>
+ *   <li><b>{@link AdminCommands}</b> — add the first token to {@code LEAF_NO_ARGS} or
+ *       {@code LEAF_WITH_ARGS} (and {@code HANDLER_ADMIN_ACTIONS}). Suggestions pull
+ *       from that list; {@code AdminCommandsSyncTest} fails if you forget.</li>
+ *   <li><b>{@link PrecivCommand}</b> — handle the action in the admin (or root) switch.</li>
+ *   <li><b>{@link AdminOps}</b> (if needed) — implement the behavior.</li>
+ *   <li><b>lang.yml</b> — usage / success / error messages if player-facing.</li>
+ * </ol>
+ * Zero-arg admin leaves: loop over {@link AdminCommands#LEAF_NO_ARGS}.  
+ * Leaves with args ({@code setkills}, {@code phase}, {@code set}, {@code clearkills}):
+ * add an explicit {@code admin.then(Commands.literal("…").then(...))} tree below —
+ * do not only put them in the zero-arg loop.
  */
 @SuppressWarnings("UnstableApiUsage")
 public final class PaperCommandRegistrar {
@@ -83,21 +104,25 @@ public final class PaperCommandRegistrar {
                     .requires(src -> src.getSender().hasPermission("preciv.admin") || src.getSender().isOp())
                     .executes(ctx -> run(precivCommand, ctx.getSource().getSender(), new String[]{"nobypass"})));
 
-            // admin tree
+            // ── admin tree ─────────────────────────────────────────────────────
+            // NEW admin subcommand checklist (see class javadoc):
+            //   1) AdminCommands.LEAF_NO_ARGS or LEAF_WITH_ARGS (+ HANDLER_ADMIN_ACTIONS)
+            //   2) Node below (zero-arg loop OR explicit .then tree with args)
+            //   3) PrecivCommand case → AdminOps method
+            // Handler-only / suggestions-only = broken on Paper.
             LiteralArgumentBuilder<CommandSourceStack> admin = Commands.literal("admin")
                     .requires(src -> src.getSender().hasPermission("preciv.admin") || src.getSender().isOp())
                     .executes(ctx -> run(precivCommand, ctx.getSource().getSender(), new String[]{"admin"}));
 
-            for (String sub : List.of(
-                    "status", "startnow", "ffanow", "endnow", "pause", "unpause",
-                    "forcetp", "forcespawnrtp", "forceceremony", "resetflags", "eligible",
-                    "reload", "wand", "spawnwand"
-            )) {
+            // Zero-arg leaves from AdminCommands.LEAF_NO_ARGS (single source of truth)
+            for (String sub : AdminCommands.LEAF_NO_ARGS) {
                 String s = sub;
                 admin.then(Commands.literal(s)
                         .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
                                 new String[]{"admin", s})));
             }
+
+            // --- LEAF_WITH_ARGS: each needs its own argument tree (not the loop above) ---
 
             admin.then(Commands.literal("clearkills")
                     .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
@@ -106,10 +131,37 @@ public final class PaperCommandRegistrar {
                             .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
                                     new String[]{"admin", "clearkills", "confirm"}))));
 
+            // setkills <player> <amount> — Brigadier node required or Paper never dispatches
+            admin.then(Commands.literal("setkills")
+                    .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
+                            new String[]{"admin", "setkills"}))
+                    .then(Commands.argument("player", StringArgumentType.word())
+                            .suggests((ctx, builder) -> suggestOnlinePlayers(builder))
+                            .executes(ctx -> {
+                                String player = StringArgumentType.getString(ctx, "player");
+                                return run(precivCommand, ctx.getSource().getSender(),
+                                        new String[]{"admin", "setkills", player});
+                            })
+                            .then(Commands.argument("amount", IntegerArgumentType.integer(0))
+                                    .suggests((ctx, builder) -> {
+                                        for (String n : List.of("0", "1", "5", "10", "25", "50", "100")) {
+                                            if (n.startsWith(builder.getRemaining())) {
+                                                builder.suggest(n);
+                                            }
+                                        }
+                                        return builder.buildFuture();
+                                    })
+                                    .executes(ctx -> {
+                                        String player = StringArgumentType.getString(ctx, "player");
+                                        int amount = IntegerArgumentType.getInteger(ctx, "amount");
+                                        return run(precivCommand, ctx.getSource().getSender(),
+                                                new String[]{"admin", "setkills", player, String.valueOf(amount)});
+                                    }))));
+
             LiteralArgumentBuilder<CommandSourceStack> phase = Commands.literal("phase")
                     .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
                             new String[]{"admin", "phase"}));
-            for (String p : List.of("idle", "paused", "countdown", "hunt", "ffa", "ended")) {
+            for (String p : AdminCommands.PHASES) {
                 String name = p;
                 phase.then(Commands.literal(name)
                         .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
@@ -121,9 +173,11 @@ public final class PaperCommandRegistrar {
                     .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
                             new String[]{"admin", "set"}));
 
-            for (String target : List.of(
-                    "centerspawn", "pos1", "pos2", "spawnpos1", "spawnpos2"
-            )) {
+            for (String target : AdminCommands.SET_TARGETS) {
+                // Times use greedy arg trees below; pos/center are zero-arg player location
+                if (target.equals("starttime") || target.equals("endtime") || target.equals("ffatime")) {
+                    continue;
+                }
                 String t = target;
                 set.then(Commands.literal(t)
                         .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
@@ -211,6 +265,17 @@ public final class PaperCommandRegistrar {
             if (date.startsWith(lower.replace(' ', 'X').isEmpty() ? lower : lower.split("\\s+")[0])
                     || lower.split("\\s+")[0].length() < 10) {
                 builder.suggest(date);
+            }
+        }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestOnlinePlayers(SuggestionsBuilder builder) {
+        String rem = builder.getRemaining() == null ? "" : builder.getRemaining().toLowerCase(Locale.ROOT);
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            String name = p.getName();
+            if (name != null && (rem.isEmpty() || name.toLowerCase(Locale.ROOT).startsWith(rem))) {
+                builder.suggest(name);
             }
         }
         return builder.buildFuture();

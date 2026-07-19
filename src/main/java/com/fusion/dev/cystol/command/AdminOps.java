@@ -257,6 +257,42 @@ public final class AdminOps {
         sender.sendMessage(lang.msg("admin.clearkills-ok"));
     }
 
+    /**
+     * Absolute set of a player's kill score (0 removes them from the board).
+     * Works offline if the server has seen the name (Bukkit offline player).
+     */
+    public void setKills(CommandSender sender, String playerName, String amountRaw) {
+        if (playerName == null || playerName.isBlank() || amountRaw == null || amountRaw.isBlank()) {
+            sender.sendMessage(lang.msg("admin.setkills-usage"));
+            return;
+        }
+        int amount;
+        try {
+            amount = Integer.parseInt(amountRaw.trim());
+        } catch (NumberFormatException e) {
+            sender.sendMessage(lang.msg("admin.setkills-invalid-amount"));
+            return;
+        }
+        if (amount < 0) {
+            sender.sendMessage(lang.msg("admin.setkills-invalid-amount"));
+            return;
+        }
+        org.bukkit.entity.Player online = org.bukkit.Bukkit.getPlayerExact(playerName);
+        org.bukkit.OfflinePlayer target = online != null
+                ? online
+                : org.bukkit.Bukkit.getOfflinePlayer(playerName);
+        if (online == null && !target.hasPlayedBefore() && target.getName() == null) {
+            sender.sendMessage(lang.msg("admin.setkills-not-found", Map.of("player", playerName)));
+            return;
+        }
+        String name = target.getName() != null ? target.getName() : playerName;
+        killService.setKills(target.getUniqueId(), name, amount);
+        sender.sendMessage(lang.msg("admin.setkills-ok", Map.of(
+                "player", name,
+                "kills", String.valueOf(amount)
+        )));
+    }
+
     public void reload(CommandSender sender) {
         config.reload();
         lang.reload();
@@ -320,7 +356,7 @@ public final class AdminOps {
     public void sendUsage(CommandSender sender) {
         sender.sendMessage(Component.text(
                 "/preciv admin <status|startnow|ffanow|endnow|pause|unpause|forcetp|forcespawnrtp|forceceremony|resetflags|"
-                        + "eligible|clearkills|reload|phase|wand|spawnwand|set …>"
+                        + "eligible|clearkills|setkills|reload|phase|wand|spawnwand|set …>"
         ));
     }
 

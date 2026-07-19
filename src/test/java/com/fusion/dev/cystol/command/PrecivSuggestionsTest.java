@@ -41,6 +41,7 @@ class PrecivSuggestionsTest {
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin phase")));
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin set")));
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin clearkills")));
+        assertTrue(admin.stream().anyMatch(s -> s.equals("admin setkills")));
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin wand")));
         assertTrue(admin.stream().anyMatch(s -> s.equals("admin spawnwand")));
     }

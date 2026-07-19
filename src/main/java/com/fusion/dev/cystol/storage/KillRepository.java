@@ -73,6 +73,19 @@ public final class KillRepository {
         });
     }
 
+    /** Remove one player row (admin setkills 0). No schema change. */
+    public void delete(UUID uuid) throws SQLException {
+        if (uuid == null) {
+            return;
+        }
+        db.withConnection(c -> {
+            try (PreparedStatement ps = c.prepareStatement("DELETE FROM kills WHERE uuid = ?")) {
+                ps.setString(1, uuid.toString());
+                ps.executeUpdate();
+            }
+        });
+    }
+
     public List<DenseRanking.KillRecord> listAll() throws SQLException {
         return new ArrayList<>(loadAll().values());
     }

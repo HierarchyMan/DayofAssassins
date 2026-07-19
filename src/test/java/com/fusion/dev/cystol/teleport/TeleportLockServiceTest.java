@@ -155,6 +155,53 @@ class TeleportLockServiceTest {
     }
 
     @Test
+    void portalFamilyIsExemptAndTrusted() {
+        assertTrue(TeleportLockService.isExemptCause(
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.NETHER_PORTAL));
+        assertTrue(TeleportLockService.isExemptCause(
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.END_PORTAL));
+        assertTrue(TeleportLockService.isExemptCause(
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.END_GATEWAY));
+        assertTrue(TeleportLockService.isPortalFamilyCause(
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.END_GATEWAY));
+        assertFalse(TeleportLockService.isPortalFamilyCause(
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.ENDER_PEARL));
+    }
+
+    @Test
+    void trustedWorldChangeExpires() throws InterruptedException {
+        TeleportLockService service = new TeleportLockService(null, null);
+        java.util.UUID id = java.util.UUID.randomUUID();
+        service.markTrustedWorldChange(null, 1000L); // null-safe
+        assertFalse(service.hasTrustedWorldChange(id));
+        // use player-less path via allow + clear
+        service.allowTemporarily(id, 1000L);
+        assertTrue(service.hasTemporaryAllow(id));
+        service.clearPlayer(id);
+        assertFalse(service.hasTemporaryAllow(id));
+        assertFalse(service.hasTrustedWorldChange(id));
+    }
+
+    @Test
+    void huntRespawnRelocateGate() {
+        assertTrue(HuntRespawnService.shouldRelocate(
+                true, false, com.fusion.dev.cystol.event.EventPhase.HUNT,
+                org.bukkit.GameMode.SURVIVAL));
+        assertFalse(HuntRespawnService.shouldRelocate(
+                true, true, com.fusion.dev.cystol.event.EventPhase.HUNT,
+                org.bukkit.GameMode.SURVIVAL));
+        assertFalse(HuntRespawnService.shouldRelocate(
+                true, false, com.fusion.dev.cystol.event.EventPhase.FFA,
+                org.bukkit.GameMode.SURVIVAL));
+        assertFalse(HuntRespawnService.shouldRelocate(
+                true, false, com.fusion.dev.cystol.event.EventPhase.HUNT,
+                org.bukkit.GameMode.SPECTATOR));
+        assertFalse(HuntRespawnService.shouldRelocate(
+                false, false, com.fusion.dev.cystol.event.EventPhase.HUNT,
+                org.bukkit.GameMode.SURVIVAL));
+    }
+
+    @Test
     void revertAllowTicksIsOnlyAFew() {
         assertTrue(TeleportLockService.REVERT_ALLOW_TICKS >= 1L);
         assertTrue(TeleportLockService.REVERT_ALLOW_TICKS <= 5L);

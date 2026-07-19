@@ -26,7 +26,10 @@ import com.fusion.dev.cystol.host.HostGui;
 import com.fusion.dev.cystol.kill.KillService;
 import com.fusion.dev.cystol.kill.PvpManagerKillListener;
 import com.fusion.dev.cystol.teleport.BetterRtpBridge;
+import com.fusion.dev.cystol.teleport.EssentialsHomeBridge;
+import com.fusion.dev.cystol.teleport.HuntRespawnService;
 import com.fusion.dev.cystol.teleport.NoBypassService;
+import com.fusion.dev.cystol.teleport.RtpCommandService;
 import com.fusion.dev.cystol.teleport.SpawnHuntRtpJoinListener;
 import com.fusion.dev.cystol.teleport.SpawnHuntRtpService;
 import com.fusion.dev.cystol.teleport.TeleportLockListener;
@@ -150,8 +153,16 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
                 eventManager, config, noBypassService, getLogger());
         BetterRtpBridge betterRtpBridge = new BetterRtpBridge(getLogger());
         betterRtpBridge.register(this);
+        EssentialsHomeBridge essentialsHomeBridge = new EssentialsHomeBridge(getLogger());
+        essentialsHomeBridge.register(this);
         SpawnHuntRtpService spawnHuntRtpService = new SpawnHuntRtpService(
                 this, eventManager, config, teleportLock, betterRtpBridge, noBypassService, getLogger()
+        );
+        RtpCommandService rtpCommandService = new RtpCommandService(
+                eventManager, config, spawnHuntRtpService, lang
+        );
+        HuntRespawnService huntRespawnService = new HuntRespawnService(
+                this, eventManager, config, teleportLock, spawnHuntRtpService, essentialsHomeBridge, getLogger()
         );
 
         eventScheduler = new EventScheduler(
@@ -166,9 +177,11 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
                 new PvpManagerKillListener(eventManager, killService, config, effects, lang, getLogger()), this);
 
-        getServer().getPluginManager().registerEvents(new TeleportLockListener(this, teleportLock, lang), this);
+        getServer().getPluginManager().registerEvents(
+                new TeleportLockListener(this, teleportLock, lang, rtpCommandService), this);
         getServer().getPluginManager().registerEvents(
                 new SpawnHuntRtpJoinListener(this, spawnHuntRtpService), this);
+        getServer().getPluginManager().registerEvents(huntRespawnService, this);
 
         // Only hunters with a target, and only during scoring phases.
         getServer().getScheduler().runTaskTimer(this, () -> {
@@ -215,7 +228,13 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
                 + " nobypass=" + (noBypassService != null && noBypassService.isActive())
                 + " tpLock=" + config.teleportLockEnabled()
                 + " tpLockDebug=" + config.teleportLockDebug()
-                + " huntRtpBypassTicks=" + config.huntRtpBypassTicks());
+                + " huntRtpBypassTicks=" + config.huntRtpBypassTicks()
+                + " betterRtp=" + betterRtpBridge.backendLabel()
+                + " essentialsHome=" + essentialsHomeBridge.backend()
+                + " respawnRelocate=" + config.respawnRelocateEnabled()
+                + " rtpOverride=" + config.rtpCommandOverride()
+                + " rtpAllow=" + config.rtpCommandAllow()
+                + " killAntiFarm=" + config.killAntiFarmEnabled());
     }
 
     @Override

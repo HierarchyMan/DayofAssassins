@@ -32,6 +32,7 @@ public final class KillService {
     private final PastGameRepository pastGames;
     private final Logger logger;
     private final ConcurrentHashMap<UUID, DenseRanking.KillRecord> kills = new ConcurrentHashMap<>();
+    private final KillFarmGuard farmGuard = new KillFarmGuard();
     private final ExecutorService writer;
     private final AtomicBoolean rankingDirty = new AtomicBoolean(true);
     private volatile List<DenseRanking.Entry> liveRankingCache = List.of();
@@ -71,6 +72,11 @@ public final class KillService {
         return r == null ? 0 : r.kills();
     }
 
+    /** In-memory killer→victim anti-farm window (cleared with {@link #clearAll()}). */
+    public KillFarmGuard farmGuard() {
+        return farmGuard;
+    }
+
     public void creditKill(UUID killer, String killerName) {
         long nowMs = System.currentTimeMillis();
         kills.compute(killer, (id, prev) -> {
@@ -80,6 +86,35 @@ public final class KillService {
             enqueueUpsert(record);
             return record;
         });
+        markRankingDirty();
+    }
+
+    /**
+     * Staff absolute set of kill count. {@code 0} removes the row from live ranking + disk.
+     * No schema change — uses existing upsert / delete by uuid.
+     */
+    public void setKills(UUID uuid, String name, int amount) {
+        if (uuid == null) {
+            return;
+        }
+        int killsAmount = Math.max(0, amount);
+        if (killsAmount == 0) {
+            kills.remove(uuid);
+            markRankingDirty();
+            writer.execute(() -> {
+                try {
+                    repository.delete(uuid);
+                } catch (SQLException e) {
+                    logger.log(Level.SEVERE, "Failed to delete kill row for " + uuid, e);
+                }
+            });
+            return;
+        }
+        long nowMs = System.currentTimeMillis();
+        String n = name != null && !name.isBlank() ? name : "Unknown";
+        DenseRanking.KillRecord record = new DenseRanking.KillRecord(uuid, n, killsAmount, nowMs);
+        kills.put(uuid, record);
+        enqueueUpsert(record);
         markRankingDirty();
     }
 
@@ -170,6 +205,7 @@ public final class KillService {
      */
     public void clearAll() {
         kills.clear();
+        farmGuard.clear();
         markRankingDirty();
         refreshRankingCache();
         writer.execute(() -> {

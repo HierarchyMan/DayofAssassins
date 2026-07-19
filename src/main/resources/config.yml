@@ -85,6 +85,30 @@ spawn:
     # hunt lock. Default 40 = 2s. Cleared as soon as that TP lands. Does NOT unlock /spawn.
     # Hard-capped at 100 ticks. (Legacy bypass-ms is still read, converted, and capped.)
     bypass-ticks: 40
+  # Hunt only: on death, move players off the fight camp.
+  # Prefer Essentials home when set; otherwise force BetterRTP (same bridge as hunt dump).
+  respawn-relocate:
+    enabled: true
+    prefer-essentials-home: true
+
+# /rtp during HUNT: own the command (ignore blocklist for "rtp") and run our BetterRTP.
+# Outside HUNT: lock is off — native /rtp works; we do not intercept.
+rtp:
+  # true = intercept /rtp in HUNT; false = leave it on the teleport-lock blocklist
+  command-override: true
+  # When override is true: false denies /rtp with a message; true runs force BetterRTP
+  allow-command: true
+  # Cooldown only for this override path (not kickoff / zone / respawn RTP)
+  command-cooldown-seconds: 300
+
+# Kill credit anti-farm (in-memory only — no DB schema change)
+kills:
+  anti-farm:
+    enabled: true
+    # First N kills on the same victim in the window count; further do not
+    max-credits-per-victim: 1
+    # Sliding window (seconds). 300 = 5 minutes
+    window-seconds: 300
 
 # Hunt only: block TP commands, plugin teleports, and world-changes.
 # Cross-world moves (e.g. /spawn hub) always blocked. World change is not cancellable —

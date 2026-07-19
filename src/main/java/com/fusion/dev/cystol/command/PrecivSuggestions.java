@@ -22,32 +22,10 @@ public final class PrecivSuggestions {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private static final List<String> ROOT = List.of("compass", "killtop", "gui", "nobypass", "admin");
-    private static final List<String> ADMIN = List.of(
-            "status",
-            "startnow",
-            "ffanow",
-            "endnow",
-            "pause",
-            "unpause",
-            "forcetp",
-            "forcespawnrtp",
-            "forceceremony",
-            "resetflags",
-            "eligible",
-            "clearkills",
-            "reload",
-            "phase",
-            "set",
-            "wand",
-            "spawnwand"
-    );
-    private static final List<String> SET = List.of(
-            "starttime", "ffatime", "endtime", "centerspawn", "pos1", "pos2",
-            "spawnpos1", "spawnpos2"
-    );
-    private static final List<String> PHASES = List.of(
-            "idle", "paused", "countdown", "hunt", "ffa", "ended"
-    );
+    /** Same tokens as Brigadier admin first-level (see {@link AdminCommands}). */
+    private static final List<String> ADMIN = AdminCommands.ALL_FIRST_TOKENS;
+    private static final List<String> SET = AdminCommands.SET_TARGETS;
+    private static final List<String> PHASES = AdminCommands.PHASES;
     private static final List<String> TIME_SAMPLES = List.of("00:00:00", "12:00:00", "18:00:00");
 
     private PrecivSuggestions() {
@@ -114,6 +92,10 @@ public final class PrecivSuggestions {
             if (parts.length == 3) {
                 return withHead(parts, 2, filterPrefix(List.of("confirm"), parts[2]));
             }
+            return List.of();
+        }
+        if (adminSub.equals("setkills")) {
+            // player name + amount are live suggestions via Brigadier only
             return List.of();
         }
         // status / startnow / wand / etc. — no further args

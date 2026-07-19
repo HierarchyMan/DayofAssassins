@@ -50,6 +50,11 @@ public final class TeleportLockService {
      * Used to revert illegal world changes.
      */
     private final ConcurrentHashMap<UUID, Location> lastSafeLocation = new ConcurrentHashMap<>();
+    /**
+     * After an exempt portal (or respawn allow), world-change must not snap back even if
+     * last-safe adoption races. Epoch-ms until which world-change is trusted.
+     */
+    private final ConcurrentHashMap<UUID, Long> trustWorldChangeUntilMs = new ConcurrentHashMap<>();
 
     public TeleportLockService(EventManager eventManager, PluginConfig config) {
         this(eventManager, config, null, null);
@@ -210,12 +215,60 @@ public final class TeleportLockService {
         return player == null ? null : lastSafeLocation(player.getUniqueId());
     }
 
+    /**
+     * Trust the next world-change (and plugin-style TPs via temp allow) for a short window.
+     * Used after exempt portal teleports and hunt respawn placement.
+     */
+    public void markTrustedWorldChange(Player player, long durationMs) {
+        if (player == null) {
+            return;
+        }
+        long ms = Math.max(50L, durationMs);
+        long until = System.currentTimeMillis() + ms;
+        trustWorldChangeUntilMs.merge(player.getUniqueId(), until, Math::max);
+    }
+
+    public void markTrustedWorldChangeTicks(Player player, long ticks) {
+        markTrustedWorldChange(player, Math.max(1L, ticks) * 50L);
+    }
+
+    /** Respawn placement window — same as a few seconds of trusted cross-world / plugin TP. */
+    public void markRespawnAllow(Player player) {
+        if (player == null) {
+            return;
+        }
+        // Cover bed/world-spawn placement + follow-up PLUGIN/UNKNOWN teleport
+        allowTemporarilyTicks(player, Math.max(REVERT_ALLOW_TICKS, 40L));
+        markTrustedWorldChangeTicks(player, 40L);
+    }
+
+    public boolean hasTrustedWorldChange(UUID uuid) {
+        if (uuid == null) {
+            return false;
+        }
+        Long until = trustWorldChangeUntilMs.get(uuid);
+        if (until == null) {
+            return false;
+        }
+        long now = System.currentTimeMillis();
+        if (now >= until) {
+            trustWorldChangeUntilMs.remove(uuid, until);
+            return false;
+        }
+        return true;
+    }
+
+    public boolean hasTrustedWorldChange(Player player) {
+        return player != null && hasTrustedWorldChange(player.getUniqueId());
+    }
+
     public void clearPlayer(UUID uuid) {
         if (uuid == null) {
             return;
         }
         lastSafeLocation.remove(uuid);
         temporaryAllowUntilMs.remove(uuid);
+        trustWorldChangeUntilMs.remove(uuid);
     }
 
     public void clearPlayer(Player player) {
@@ -235,6 +288,10 @@ public final class TeleportLockService {
         }
         String label = primaryCommandLabel(rawMessage);
         if (label.isEmpty()) {
+            return false;
+        }
+        // /rtp owned by RtpCommandService when override is on — never generic-block it
+        if ("rtp".equals(label) && config != null && config.rtpCommandOverride()) {
             return false;
         }
         return config.teleportLockCommands().contains(label);
@@ -257,6 +314,9 @@ public final class TeleportLockService {
         String label = primaryCommandLabel(rawMessage);
         if (label.isEmpty()) {
             return "allow:empty-label";
+        }
+        if ("rtp".equals(label) && config.rtpCommandOverride()) {
+            return "allow:rtp-override-owns-command (listener must handle)";
         }
         if (!config.teleportLockCommands().contains(label)) {
             return "allow:label-not-in-blocklist label=" + label;
@@ -372,6 +432,10 @@ public final class TeleportLockService {
         if (hasTemporaryAllow(player)) {
             return false;
         }
+        // Portal / respawn: trust even if last-safe adoption raced behind world-change
+        if (hasTrustedWorldChange(player)) {
+            return false;
+        }
         Location last = lastSafeLocation.get(player.getUniqueId());
         World current = player.getWorld();
         // Allowed cross-world TP already adopted dest as last safe → stay
@@ -399,6 +463,9 @@ public final class TeleportLockService {
         }
         if (hasTemporaryAllow(player)) {
             return "allow:temp-rtp-window";
+        }
+        if (hasTrustedWorldChange(player)) {
+            return "allow:trusted-portal-or-respawn-window";
         }
         Location last = lastSafeLocation.get(player.getUniqueId());
         World current = player.getWorld();
@@ -552,6 +619,16 @@ public final class TeleportLockService {
                  SPECTATE, EXIT_BED, DISMOUNT -> true;
             default -> false;
         };
+    }
+
+    /** Dimension portals (not pearls/chorus) — need trusted world-change window. */
+    public static boolean isPortalFamilyCause(TeleportCause cause) {
+        if (cause == null) {
+            return false;
+        }
+        return cause == TeleportCause.NETHER_PORTAL
+                || cause == TeleportCause.END_PORTAL
+                || cause == TeleportCause.END_GATEWAY;
     }
 
     /**
