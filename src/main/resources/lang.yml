@@ -12,6 +12,9 @@ messages:
 teleport:
   # Hunt phase only — blocked warps/homes/spawn and illegal world-changes
   locked: "&cTeleporting is disabled during the hunt. Fight in the open — no /spawn, warps, or hub."
+  # Shown when a blacklisted command is cancelled (PlayerCommandPreprocess, LOWEST).
+  # %command% = primary label without slash (e.g. spawn, home)
+  command-blocked: "&cYou can't use &f/%command% &cduring the hunt."
 
 event:
   description:
@@ -130,6 +133,16 @@ compass:
         - "&7Nobody online to track right now."
 
 killtop:
+  # ── /preciv killtop configuration ──────────────────────────────────
+  # limit      : how many ranked players to display (default 10).
+  #              0 = show every ranked player.
+  # Placeholders available in the lines below:
+  #   %position%  – the player's rank (1, 2, 3, …)
+  #   %player%    – the player's display name
+  #   %kills%     – the player's total credited kills
+  # Edit header / entry / empty to restyle the board.
+  # Once `limit` entries are printed, the rest are skipped.
+  limit: 10
   header: "&c&lKill Leaderboard"
   entry: "&e#%position% &f%player% &7— &c%kills% kills"
   empty: "&7No kills yet."

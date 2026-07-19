@@ -94,7 +94,7 @@ In `plugins/TAB/config.yml`:
 ```yaml
 scoreboard:
   enabled: true   # REQUIRED — injects event lines into the existing board
-  # Keep a default scoreboard with enough lines for offset + inject rows (see config.yml)
+  # Injects insert rows at tab.scoreboard.offset (board grows; no need for blank filler rows)
 
 bossbar:
   enabled: false  # optional — if false, Day of Assassins still shows its bar via Paper/Bukkit
@@ -303,6 +303,7 @@ Phase is **always derived from the clock**. These commands adjust times and/or o
 | `storage.file` | `data.db` | SQLite file under plugin folder |
 | `compass.*` / `wand.*` | materials | Arena wand item material / CMD |
 | `spawn-wand.*` | materials | Spawn zone wand item material / CMD (separate PDC from arena wand) |
+| `tab.scoreboard.replace-existing` | `false` | `true` = legacy overwrite at inject indices (no grow); `false` = insert/shift |
 | `tab.scoreboard.offset` | `3` | First 0-based row on the **existing** TAB board for relative injects |
 | `tab.scoreboard.top-slots` | `3` | How many leaders to expose as `%top1_*` … `%topN_*` |
 | `tab.scoreboard.empty-name` / `empty-kills` | `—` / `0` | Empty rank slots |
@@ -507,9 +508,10 @@ TAB must be installed with **bossbar** and **scoreboard** features enabled.
 | What we do | What we do **not** do |
 |------------|------------------------|
 | Create an API bossbar and `addPlayer` so it **stacks** with config bars | Replace other TAB bossbars |
-| `Line.setText` on free rows of the **active/registered** TAB scoreboard | `showScoreboard` a private board that wipes the server layout |
+| **Insert** contiguous inject rows (or grow-to-fit) on the **active/registered** TAB scoreboard; optional legacy overwrite | `showScoreboard` a private board that wipes the server layout |
 
-Set `tab.scoreboard.offset` (or absolute `line:` keys) to free rows on your existing TAB scoreboard config. Leave unused rows alone so the rest of the layout stays intact.
+Default: set `tab.scoreboard.offset` where the killtop block should appear — contiguous relative lines are **inserted** (board grows; rows below shift down). On event end they are removed.  
+Legacy: `tab.scoreboard.replace-existing: true` overwrites existing rows only (needs filler lines on the TAB board already).
 
 HUD `%remaining%` is **until the next phase** (not full event length). Bossbar fill tracks the **current phase segment**. Pre-start countdown title still says “starts in …”.
 
@@ -523,8 +525,9 @@ HUD `%remaining%` is **until the next phase** (not full event length). Bossbar f
 | “Missing dependency TAB / PvPManager” | Install both; names must match |
 | SQLite fails first boot | Allow outbound HTTPS for Paper library download (then cached) |
 | No bossbar | TAB installed? Bossbar feature on? `tab.bossbar.enabled`? Event in countdown/hunt/FFA? |
-| Event lines wiped the whole scoreboard | Old behavior; current build **injects only**. Update jar; free rows at `offset` must exist on the TAB board |
-| Scoreboard shows only blank / wrong rows | `offset` / `line` indices past the board length? Enable TAB scoreboard feature? |
+| Event lines wiped the whole scoreboard | Old behavior; current build **injects/inserts only**. Update jar |
+| Normal scoreboard rows vanished during event | Update jar — inject now **inserts** and shifts rows instead of overwriting. Sparse absolute `line:` still overwrites those cells only |
+| Scoreboard shows only blank / wrong rows | Enable TAB scoreboard feature? Sidebar max ~15 lines — long injects + long boards can clip |
 | Countdown looks like “total event left” | `%remaining%` is next-phase time; rename template (e.g. “Finale in …”) if players misread it |
 | No kills counting | Between start and end? PvPManager resolving killer? |
 | Nobody teleported at FFA | `/preciv admin eligible` — Survival + not vanished + no bypass? Arena world loaded? Centerspawn set? Dry standable ground in cuboid? |

@@ -33,6 +33,7 @@ import com.fusion.dev.cystol.teleport.TeleportLockListener;
 import com.fusion.dev.cystol.teleport.TeleportLockService;
 import com.fusion.dev.cystol.storage.EventRepository;
 import com.fusion.dev.cystol.storage.KillRepository;
+import com.fusion.dev.cystol.storage.PastGameRepository;
 import com.fusion.dev.cystol.storage.SqliteDatabase;
 import com.fusion.dev.cystol.util.VanishService;
 import org.bukkit.Bukkit;
@@ -114,12 +115,15 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
 
         EventRepository eventRepository = new EventRepository(database);
         KillRepository killRepository = new KillRepository(database);
+        PastGameRepository pastGameRepository = new PastGameRepository(database);
 
         eventManager = new EventManager(config, eventRepository, getLogger());
         eventManager.loadFromStorageAndConfig();
 
-        killService = new KillService(killRepository, getLogger());
+        killService = new KillService(killRepository, pastGameRepository, getLogger());
         killService.load();
+        // First HUNT enter of each schedule arm wipes live scores (past games kept)
+        eventManager.bindKillService(killService);
 
         vanishService = new VanishService(getLogger());
         vanishService.register(this);
@@ -142,7 +146,8 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         );
 
         noBypassService = new NoBypassService(config.nobypassEnabledAtStart());
-        TeleportLockService teleportLock = new TeleportLockService(eventManager, config, noBypassService);
+        TeleportLockService teleportLock = new TeleportLockService(
+                eventManager, config, noBypassService, getLogger());
         BetterRtpBridge betterRtpBridge = new BetterRtpBridge(getLogger());
         betterRtpBridge.register(this);
         SpawnHuntRtpService spawnHuntRtpService = new SpawnHuntRtpService(
@@ -151,7 +156,8 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
 
         eventScheduler = new EventScheduler(
                 this, eventManager, config, lang, ffaSpawnService, compassListener,
-                ceremonyService, tabDisplayService, effects, spawnHuntRtpService, getLogger()
+                ceremonyService, tabDisplayService, effects, spawnHuntRtpService,
+                killService, getLogger()
         );
 
         getServer().getPluginManager().registerEvents(compassListener, this);
@@ -206,7 +212,10 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
 
         getLogger().info("Day of Assassins enabled (Paper plugin). Phase=" + eventManager.phase()
                 + " vanish=" + vanishService.backendLabel()
-                + " nobypass=" + (noBypassService != null && noBypassService.isActive()));
+                + " nobypass=" + (noBypassService != null && noBypassService.isActive())
+                + " tpLock=" + config.teleportLockEnabled()
+                + " tpLockDebug=" + config.teleportLockDebug()
+                + " huntRtpBypassTicks=" + config.huntRtpBypassTicks());
     }
 
     @Override

@@ -86,7 +86,7 @@ Leaving the server is fine — **still ranked** (offline kills persist; offline 
 |--------|----------|
 | **Clock / state** | COUNTDOWN → HUNT → FFA → ENDED; **fully persisted** (SQLite) |
 | **TAB bossbar** | Pre-start: countdown + **filling** bar (stacks with existing TAB bars). Live: #1 killer + **time until next phase**; fill tracks **current phase segment** |
-| **TAB scoreboard** | **Inject** top-N + phase lines at configured indices/offset on the **existing** TAB board (never replace the whole board) |
+| **TAB scoreboard** | **Insert** top-N + phase lines at configured offset on the **existing** TAB board (board grows; never replace the whole board) |
 | **Compass** | Track GUI; one only; bound to inv; death: not dropped, re-given on respawn |
 | **Kills** | Via **PvPManager API**; window start→end; **persist SQLite**; no kill-message edits |
 | **Hunt TP lock** | Hunt only: block warp/home/plugin TP when **from** is outside spawn + arena |
@@ -159,14 +159,16 @@ At FFA: perform TP + optional start title.
 
 `paper-plugin.yml`: hard depend on **TAB** (required). Scoreboard + bossbar features must be enabled in TAB.
 
-### Scoreboard — inject, do not replace
+### Scoreboard — insert/inject, do not replace
 
-- Write only configured rows via TAB `Line#setText` on the player’s existing / registered board  
+- Contiguous relative rows are **inserted** via TAB `Scoreboard#addLine` at `offset` (board grows; existing rows shift down); text set with `Line#setText`  
+- Sparse absolute `line:` keys grow-to-fit then overwrite only those cells  
 - **Never** `showScoreboard` a private board that wipes server layout  
-- On clear: restore original text for those indices  
+- On clear: `removeLine` the inserted block (or tail appends) / restore overwritten text  
 - Config: `tab.scoreboard.offset` + ordered `lines` (relative), or absolute `line:` keys  
-- Default injects: **top 1–3** kill leaders + phase / countdown row  
-- Placeholders: `%top1_name%`…`%topN_*` (N = `top-slots`), `%top_killer%` alias for #1, `%phase%`, `%remaining%`, `%until_end%`  
+- Default injects: **top 1–4** kill leaders + phase / countdown row  
+- Placeholders: `%top1_name%`…`%topN_*` (N = `top-slots`), `%top_killer%` alias for #1, `%phase%`, `%timer_label%`, `%remaining%`, `%until_end%`  
+
 
 ### Timers on HUD
 

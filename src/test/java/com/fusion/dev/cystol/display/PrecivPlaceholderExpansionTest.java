@@ -49,9 +49,9 @@ class PrecivPlaceholderExpansionTest {
     void viewerKillsAndPlace() {
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
-        List<DenseRanking.Entry> ranking = DenseRanking.rank(List.of(
-                new DenseRanking.KillRecord(a, "Alice", 10),
-                new DenseRanking.KillRecord(b, "Bob", 7)
+        List<DenseRanking.Entry> ranking = DenseRanking.rankCompetition(List.of(
+                new DenseRanking.KillRecord(a, "Alice", 10, 1),
+                new DenseRanking.KillRecord(b, "Bob", 7, 2)
         ));
         assertEquals("7", PrecivPlaceholderExpansion.resolve(
                 "kills", b, ranking, u -> u.equals(b) ? 7 : 0, "—", "0"));
@@ -61,5 +61,18 @@ class PrecivPlaceholderExpansionTest {
                 "kills", UUID.randomUUID(), ranking, u -> 0, "—", "0"));
         assertEquals("0", PrecivPlaceholderExpansion.resolve(
                 "place", UUID.randomUUID(), ranking, u -> 0, "—", "0"));
+    }
+
+    @Test
+    void resolveTopFieldParsesPrevStyleSuffix() {
+        // ensure top field parser used by prev_/game_ still works for live tops
+        UUID a = UUID.randomUUID();
+        List<DenseRanking.Entry> ranking = List.of(
+                new DenseRanking.Entry(a, "Alice", 4, 1)
+        );
+        assertEquals("Alice", PrecivPlaceholderExpansion.resolve(
+                "top1_name", null, ranking, u -> 0, "—", "0"));
+        assertEquals("4", PrecivPlaceholderExpansion.resolve(
+                "top_1_kills", null, ranking, u -> 0, "—", "0"));
     }
 }

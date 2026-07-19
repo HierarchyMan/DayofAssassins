@@ -23,6 +23,7 @@ import org.bukkit.entity.Player;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -40,8 +41,9 @@ import java.util.logging.Logger;
  * (server API — not shaded; available on every Paper runtime).
  *
  * <p>Does <strong>not</strong> call {@code showScoreboard} — that would replace the player's
- * normal TAB layout. Instead each configured row is written via {@link Line#setText(String)}
- * and restored on {@link #clear()}.
+ * normal TAB layout. Default: contiguous inject rows are <strong>inserted</strong> (board grows,
+ * original lines shift down). Config {@code tab.scoreboard.replace-existing: true} keeps the
+ * legacy overwrite path (setText only, no grow). {@link #clear()} undoes either mode.
  */
 public final class TabDisplayService {
 
@@ -81,9 +83,45 @@ public final class TabDisplayService {
     private int lastBossViewerScanSize = -1;
 
     /**
-     * Original line text restored on clear: scoreboard name → (line index → original text).
+     * Per-board inject bookkeeping: inserted/appended line counts + any overwritten cell text.
+     * Keyed by scoreboard name (or {@code active:<uuid>} when unnamed).
      */
-    private final Map<String, Map<Integer, String>> savedScoreboardLines = new ConcurrentHashMap<>();
+    private final Map<String, ScoreboardInjectState> injectStateByBoard = new ConcurrentHashMap<>();
+
+    /**
+     * Undo data for one TAB scoreboard we expanded or patched.
+     *
+     * @param insertedCount lines inserted as a block (removed from {@code insertAt} on clear)
+     * @param insertAt      0-based start of the inserted block; ignored when {@code insertedCount == 0}
+     * @param appendedCount blank lines appended at the end for grow-to-fit; removed from the end on clear
+     * @param overwritten   original text for cells we overwrote without insert (sparse absolute indices)
+     */
+    private record ScoreboardInjectState(
+            int insertedCount,
+            int insertAt,
+            int appendedCount,
+            Map<Integer, String> overwritten
+    ) {
+        static ScoreboardInjectState inserted(int count, int at) {
+            return new ScoreboardInjectState(count, at, 0, Map.of());
+        }
+
+        static ScoreboardInjectState grown(int appended, Map<Integer, String> overwritten) {
+            Map<Integer, String> copy = overwritten == null || overwritten.isEmpty()
+                    ? Map.of()
+                    : Map.copyOf(overwritten);
+            return new ScoreboardInjectState(0, -1, Math.max(0, appended), copy);
+        }
+
+        /**
+         * Legacy replace mode: keep a live map so newly touched indices still snapshot
+         * originals (same as the old ConcurrentHashMap-per-board bookkeeping).
+         */
+        static ScoreboardInjectState replaceExisting(Map<Integer, String> liveOriginals) {
+            Map<Integer, String> map = liveOriginals == null ? new ConcurrentHashMap<>() : liveOriginals;
+            return new ScoreboardInjectState(0, -1, 0, map);
+        }
+    }
 
     public TabDisplayService(
             EventManager eventManager,
@@ -394,7 +432,7 @@ public final class TabDisplayService {
         boolean contentChanged = !fingerprint.equals(lastScoreboardFingerprint);
 
         // Fast path: text unchanged — only inject boards we have never touched (new join / board switch).
-        if (!contentChanged && !savedScoreboardLines.isEmpty()) {
+        if (!contentChanged && !injectStateByBoard.isEmpty()) {
             for (Player p : Bukkit.getOnlinePlayers()) {
                 TabPlayer tp = api.getPlayer(p.getUniqueId());
                 if (tp == null) {
@@ -407,7 +445,7 @@ public final class TabDisplayService {
                     }
                     String name = activeSb.getName();
                     String key = name == null ? ("active:" + p.getUniqueId()) : name;
-                    if (!savedScoreboardLines.containsKey(key)) {
+                    if (!injectStateByBoard.containsKey(key)) {
                         injectLines(key, activeSb, injections);
                     }
                 } catch (Throwable ignored) {
@@ -448,7 +486,7 @@ public final class TabDisplayService {
         }
 
         for (Map.Entry<String, Scoreboard> e : targets.entrySet()) {
-            boolean firstTouch = !savedScoreboardLines.containsKey(e.getKey());
+            boolean firstTouch = !injectStateByBoard.containsKey(e.getKey());
             if (contentChanged || firstTouch) {
                 injectLines(e.getKey(), e.getValue(), injections);
             }
@@ -457,8 +495,13 @@ public final class TabDisplayService {
     }
 
     /**
-     * Write event lines into {@code board} at configured indices only. Saves original text once
-     * so {@link #clear()} can restore. Does not replace the board or other rows.
+     * Write event lines into {@code board} at configured indices.
+     *
+     * <p>Default (insert): on first touch, contiguous inject block is <strong>inserted</strong>
+     * so total length grows and existing rows shift down. Sparse absolute indices grow-to-fit.
+     *
+     * <p>Legacy ({@code tab.scoreboard.replace-existing: true}): overwrite existing rows only —
+     * no {@code addLine}, out-of-range indices skipped, original text restored on clear.
      */
     private void injectLines(
             String boardKey,
@@ -468,6 +511,22 @@ public final class TabDisplayService {
         if (board == null || injections.isEmpty()) {
             return;
         }
+        if (config.scoreboardReplaceExisting()) {
+            injectLinesReplaceExisting(boardKey, board, injections);
+            return;
+        }
+        injectLinesInsert(boardKey, board, injections);
+    }
+
+    /**
+     * Legacy replace path (exact old behaviour): {@link Line#setText} on in-range indices only.
+     * Does not grow the board. Snapshots original cell text once for {@link #clear()}.
+     */
+    private void injectLinesReplaceExisting(
+            String boardKey,
+            Scoreboard board,
+            Map<Integer, String> injections
+    ) {
         List<Line> lines;
         try {
             lines = board.getLines();
@@ -475,13 +534,23 @@ public final class TabDisplayService {
             logger.log(Level.FINE, "scoreboard getLines failed for " + boardKey, t);
             return;
         }
+        // Old path: empty/missing board → no inject (employer boards already have filler rows).
         if (lines == null || lines.isEmpty()) {
             return;
         }
 
-        Map<Integer, String> originals = savedScoreboardLines.computeIfAbsent(
-                boardKey, k -> new ConcurrentHashMap<>()
-        );
+        // Live originals map (same as old savedScoreboardLines.computeIfAbsent).
+        ScoreboardInjectState existing = injectStateByBoard.get(boardKey);
+        final Map<Integer, String> originals;
+        if (existing != null && existing.overwritten() instanceof ConcurrentHashMap) {
+            originals = existing.overwritten();
+        } else {
+            originals = new ConcurrentHashMap<>();
+            if (existing != null && !existing.overwritten().isEmpty()) {
+                originals.putAll(existing.overwritten());
+            }
+            injectStateByBoard.put(boardKey, ScoreboardInjectState.replaceExisting(originals));
+        }
 
         for (Map.Entry<Integer, String> inj : injections.entrySet()) {
             int idx = inj.getKey();
@@ -516,6 +585,195 @@ public final class TabDisplayService {
             } catch (Throwable t) {
                 logger.log(Level.FINE, "scoreboard inject line " + idx + " on " + boardKey + " failed", t);
             }
+        }
+    }
+
+    /**
+     * Insert/grow path: expand board on first touch, then refresh inject cell text.
+     */
+    private void injectLinesInsert(
+            String boardKey,
+            Scoreboard board,
+            Map<Integer, String> injections
+    ) {
+        List<Line> lines;
+        try {
+            lines = board.getLines();
+        } catch (Throwable t) {
+            logger.log(Level.FINE, "scoreboard getLines failed for " + boardKey, t);
+            return;
+        }
+        if (lines == null) {
+            return;
+        }
+
+        // First touch: expand (insert or grow). Later ticks only refresh text.
+        if (!injectStateByBoard.containsKey(boardKey)) {
+            try {
+                expandBoardForInject(boardKey, board, lines, injections);
+            } catch (Throwable t) {
+                logger.log(Level.WARNING, "scoreboard expand failed for " + boardKey, t);
+                return;
+            }
+            try {
+                lines = board.getLines();
+            } catch (Throwable t) {
+                logger.log(Level.FINE, "scoreboard getLines after expand failed for " + boardKey, t);
+                return;
+            }
+            if (lines == null) {
+                return;
+            }
+        }
+
+        for (Map.Entry<Integer, String> inj : injections.entrySet()) {
+            int idx = inj.getKey();
+            if (idx < 0 || idx >= lines.size()) {
+                continue;
+            }
+            Line line = lines.get(idx);
+            if (line == null) {
+                continue;
+            }
+            try {
+                String next = inj.getValue() == null || inj.getValue().isBlank() ? " " : inj.getValue();
+                String current;
+                try {
+                    current = line.getText();
+                } catch (Throwable t) {
+                    current = null;
+                }
+                if (next.equals(current)) {
+                    continue;
+                }
+                line.setText(next);
+            } catch (Throwable t) {
+                logger.log(Level.FINE, "scoreboard inject line " + idx + " on " + boardKey + " failed", t);
+            }
+        }
+    }
+
+    /**
+     * Expand {@code board} so inject indices exist without permanently eating normal rows.
+     * Records undo data in {@link #injectStateByBoard}.
+     */
+    private void expandBoardForInject(
+            String boardKey,
+            Scoreboard board,
+            List<Line> linesBefore,
+            Map<Integer, String> injections
+    ) {
+        List<Integer> sorted = new ArrayList<>(injections.keySet());
+        Collections.sort(sorted);
+        if (sorted.isEmpty() || sorted.getFirst() < 0) {
+            injectStateByBoard.put(boardKey, ScoreboardInjectState.grown(0, Map.of()));
+            return;
+        }
+        int minIdx = sorted.getFirst();
+        int maxIdx = sorted.getLast();
+        int size = linesBefore == null ? 0 : linesBefore.size();
+        boolean contiguous = true;
+        for (int i = 1; i < sorted.size(); i++) {
+            if (sorted.get(i) != sorted.get(i - 1) + 1) {
+                contiguous = false;
+                break;
+            }
+        }
+
+        // Contiguous block at or inside current board → insert so originals shift down.
+        // minIdx == size is pure append (shift loop is a no-op).
+        if (contiguous && minIdx <= size) {
+            int n = sorted.size();
+            int start = minIdx;
+            for (int i = 0; i < n; i++) {
+                board.addLine(" ");
+            }
+            List<Line> lines;
+            try {
+                lines = board.getLines();
+            } catch (Throwable t) {
+                // Best-effort undo of partial adds
+                for (int i = 0; i < n; i++) {
+                    try {
+                        List<Line> cur = board.getLines();
+                        if (cur != null && !cur.isEmpty()) {
+                            board.removeLine(cur.size() - 1);
+                        }
+                    } catch (Throwable ignored) {
+                        break;
+                    }
+                }
+                throw t;
+            }
+            if (lines == null || lines.size() < size + n) {
+                logger.warning("scoreboard addLine did not grow board " + boardKey
+                        + " (size was " + size + ", expected " + (size + n) + ")");
+                injectStateByBoard.put(boardKey, ScoreboardInjectState.grown(0, Map.of()));
+                return;
+            }
+            // Shift original [start .. size) down by n into the newly added tail slots.
+            for (int i = size - 1; i >= start; i--) {
+                try {
+                    String text = lines.get(i).getText();
+                    lines.get(i + n).setText(text == null ? "" : text);
+                } catch (Throwable t) {
+                    logger.log(Level.FINE, "scoreboard shift line " + i + " on " + boardKey + " failed", t);
+                }
+            }
+            injectStateByBoard.put(boardKey, ScoreboardInjectState.inserted(n, start));
+            logger.fine("scoreboard insert " + n + " line(s) at " + start + " on " + boardKey
+                    + " (was " + size + " → " + (size + n) + ")");
+            return;
+        }
+
+        // Sparse absolute indices, or block past a gap: grow to maxIdx, overwrite only inject cells.
+        int appended = 0;
+        int needSize = maxIdx + 1;
+        while (true) {
+            List<Line> cur;
+            try {
+                cur = board.getLines();
+            } catch (Throwable t) {
+                break;
+            }
+            int curSize = cur == null ? 0 : cur.size();
+            if (curSize >= needSize) {
+                break;
+            }
+            board.addLine(" ");
+            appended++;
+            if (appended > 64) {
+                // Hard stop — something is wrong with TAB line list
+                logger.warning("scoreboard grow aborted for " + boardKey + " after 64 addLine calls");
+                break;
+            }
+        }
+        Map<Integer, String> overwritten = new HashMap<>();
+        List<Line> after;
+        try {
+            after = board.getLines();
+        } catch (Throwable t) {
+            injectStateByBoard.put(boardKey, ScoreboardInjectState.grown(appended, Map.of()));
+            return;
+        }
+        if (after != null) {
+            for (int idx : sorted) {
+                // Only snapshot cells that existed before we grew (true overwrite victims).
+                if (idx < 0 || idx >= size || idx >= after.size()) {
+                    continue;
+                }
+                try {
+                    String raw = after.get(idx).getText();
+                    overwritten.put(idx, raw == null ? "" : raw);
+                } catch (Throwable t) {
+                    overwritten.put(idx, "");
+                }
+            }
+        }
+        injectStateByBoard.put(boardKey, ScoreboardInjectState.grown(appended, overwritten));
+        if (appended > 0) {
+            logger.fine("scoreboard append " + appended + " line(s) on " + boardKey
+                    + " for max inject index " + maxIdx);
         }
     }
 
@@ -695,7 +953,7 @@ public final class TabDisplayService {
 
     public void clear() {
         // Cheap no-op when already idle — tick must not pay restore/hide cost every second.
-        if (!active && savedScoreboardLines.isEmpty()) {
+        if (!active && injectStateByBoard.isEmpty()) {
             boolean barHasViewers = false;
             if (bossBackend == BossBackend.TAB && tabBossBar != null) {
                 try {
@@ -727,11 +985,11 @@ public final class TabDisplayService {
             if (available) {
                 restoreScoreboardLines(TabAPI.getInstance());
             } else {
-                savedScoreboardLines.clear();
+                injectStateByBoard.clear();
             }
         } catch (Throwable t) {
             logger.log(Level.FINE, "display clear failed", t);
-            savedScoreboardLines.clear();
+            injectStateByBoard.clear();
         }
     }
 
@@ -773,7 +1031,7 @@ public final class TabDisplayService {
     }
 
     private void restoreScoreboardLines(TabAPI api) {
-        if (savedScoreboardLines.isEmpty()) {
+        if (injectStateByBoard.isEmpty()) {
             return;
         }
         ScoreboardManager sbm = api == null ? null : api.getScoreboardManager();
@@ -795,8 +1053,9 @@ public final class TabDisplayService {
                     }
                     try {
                         Scoreboard activeSb = sbm.getActiveScoreboard(tp);
-                        if (activeSb != null && activeSb.getName() != null) {
-                            byName.putIfAbsent(activeSb.getName(), activeSb);
+                        if (activeSb != null) {
+                            String name = activeSb.getName();
+                            byName.put(name == null ? ("active:" + p.getUniqueId()) : name, activeSb);
                         }
                     } catch (Throwable ignored) {
                         // ignore
@@ -805,38 +1064,63 @@ public final class TabDisplayService {
             }
         }
 
-        for (Map.Entry<String, Map<Integer, String>> boardEntry : savedScoreboardLines.entrySet()) {
+        for (Map.Entry<String, ScoreboardInjectState> boardEntry : injectStateByBoard.entrySet()) {
             String key = boardEntry.getKey();
+            ScoreboardInjectState state = boardEntry.getValue();
+            if (state == null) {
+                continue;
+            }
             Scoreboard board = byName.get(key);
             if (board == null) {
                 continue;
             }
-            List<Line> lines;
             try {
-                lines = board.getLines();
+                // Inserted block: removing from insertAt N times shifts originals back up.
+                if (state.insertedCount() > 0 && state.insertAt() >= 0) {
+                    for (int i = 0; i < state.insertedCount(); i++) {
+                        List<Line> lines = board.getLines();
+                        if (lines == null || state.insertAt() >= lines.size()) {
+                            break;
+                        }
+                        board.removeLine(state.insertAt());
+                    }
+                }
+                // Grow-to-fit tail: drop the blanks we appended at the end.
+                if (state.appendedCount() > 0) {
+                    for (int i = 0; i < state.appendedCount(); i++) {
+                        List<Line> lines = board.getLines();
+                        if (lines == null || lines.isEmpty()) {
+                            break;
+                        }
+                        board.removeLine(lines.size() - 1);
+                    }
+                }
+                // Sparse overwrite restore (only when we did not insert a contiguous block).
+                if (!state.overwritten().isEmpty()) {
+                    List<Line> lines = board.getLines();
+                    if (lines != null) {
+                        for (Map.Entry<Integer, String> lineEntry : state.overwritten().entrySet()) {
+                            int idx = lineEntry.getKey();
+                            if (idx < 0 || idx >= lines.size()) {
+                                continue;
+                            }
+                            Line line = lines.get(idx);
+                            if (line == null) {
+                                continue;
+                            }
+                            try {
+                                line.setText(lineEntry.getValue() == null ? "" : lineEntry.getValue());
+                            } catch (Throwable t) {
+                                logger.log(Level.FINE, "scoreboard restore line failed", t);
+                            }
+                        }
+                    }
+                }
             } catch (Throwable t) {
-                continue;
-            }
-            if (lines == null) {
-                continue;
-            }
-            for (Map.Entry<Integer, String> lineEntry : boardEntry.getValue().entrySet()) {
-                int idx = lineEntry.getKey();
-                if (idx < 0 || idx >= lines.size()) {
-                    continue;
-                }
-                Line line = lines.get(idx);
-                if (line == null) {
-                    continue;
-                }
-                try {
-                    line.setText(lineEntry.getValue() == null ? "" : lineEntry.getValue());
-                } catch (Throwable t) {
-                    logger.log(Level.FINE, "scoreboard restore line failed", t);
-                }
+                logger.log(Level.FINE, "scoreboard restore failed for " + key, t);
             }
         }
-        savedScoreboardLines.clear();
+        injectStateByBoard.clear();
     }
 
     /** Drop per-player state on quit (injects are board-level; Paper bar cleaned on next scan). */

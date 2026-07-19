@@ -378,9 +378,17 @@ public final class SpawnHuntRtpService {
     }
 
     private boolean rtpPlayerUnchecked(Player player) {
-        teleportLock.allowTemporarily(player, config.huntRtpBypassMs());
+        // Few ticks only — cleared when the PLUGIN TP lands (see TeleportLockListener).
+        // Never a multi-second /spawn free pass.
+        long ticks = config.huntRtpBypassTicks();
+        teleportLock.allowTemporarilyTicks(player, ticks);
         World dest = resolveRtpWorld(player);
-        return betterRtp.requestRtp(player, dest);
+        boolean ok = betterRtp.requestRtp(player, dest);
+        if (!ok) {
+            // Request never handed off — drop the allow immediately
+            teleportLock.clearTemporaryAllow(player);
+        }
+        return ok;
     }
 
     /**

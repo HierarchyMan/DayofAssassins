@@ -68,6 +68,27 @@ class KillServiceTest {
         assertEquals(2, service.topKiller().orElseThrow().kills());
         assertEquals(1, service.topKiller().orElseThrow().place());
         assertEquals(2, service.ranking().size());
+        // Live = competition places; Alice is #2 not shared #1
+        assertEquals(2, service.ranking().get(1).place());
+        assertEquals(1, service.rankingFinal().get(0).place());
+    }
+
+    @Test
+    void firstToReachKeepsLiveLeadOnEqualKills() throws Exception {
+        UUID early = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        UUID late = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        service.creditKill(early, "Alice");
+        service.creditKill(early, "Alice");
+        Thread.sleep(5L);
+        service.creditKill(late, "Zed");
+        service.creditKill(late, "Zed");
+        assertEquals("Alice", service.ranking().get(0).name());
+        assertEquals(1, service.ranking().get(0).place());
+        assertEquals("Zed", service.ranking().get(1).name());
+        assertEquals(2, service.ranking().get(1).place());
+        // Final dense: both place 1
+        assertEquals(1, service.rankingFinal().get(0).place());
+        assertEquals(1, service.rankingFinal().get(1).place());
     }
 
     @Test

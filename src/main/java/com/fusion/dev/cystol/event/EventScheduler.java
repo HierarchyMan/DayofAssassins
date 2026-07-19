@@ -8,6 +8,7 @@ import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.display.TabDisplayService;
 import com.fusion.dev.cystol.fx.EffectService;
+import com.fusion.dev.cystol.kill.KillService;
 import com.fusion.dev.cystol.teleport.SpawnHuntRtpService;
 import com.fusion.dev.cystol.util.TimeUtil;
 import net.kyori.adventure.text.Component;
@@ -40,6 +41,7 @@ public final class EventScheduler {
     private final TabDisplayService tabDisplayService;
     private final EffectService effects;
     private final SpawnHuntRtpService spawnHuntRtpService;
+    private final KillService killService;
     private final Logger logger;
 
     private BukkitTask tickTask;
@@ -68,6 +70,7 @@ public final class EventScheduler {
             TabDisplayService tabDisplayService,
             EffectService effects,
             SpawnHuntRtpService spawnHuntRtpService,
+            KillService killService,
             Logger logger
     ) {
         this.plugin = plugin;
@@ -80,6 +83,7 @@ public final class EventScheduler {
         this.tabDisplayService = tabDisplayService;
         this.effects = effects;
         this.spawnHuntRtpService = spawnHuntRtpService;
+        this.killService = killService;
         this.logger = logger;
     }
 
@@ -240,12 +244,41 @@ public final class EventScheduler {
     }
 
     private void runCeremonyOnce() {
+        // Freeze dense ranking into chronological past_games (id 1,2,3…) before titles.
+        // Live kill rows stay until the next hunt arm opens (then wiped).
+        archiveScoresIfNeeded();
         ceremonyService.runCeremony();
         tabDisplayService.clear();
         // Single persist: ceremony_done + paused (survives restart without re-firing)
         eventManager.markCeremonyDoneAndPause();
         lastPhase = EventPhase.PAUSED;
         logger.info("End ceremony complete — event paused until host unpauses");
+    }
+
+    /**
+     * One-shot per schedule arm: copy live kills into past_games with dense places.
+     * Does not clear live scores (next hunt start does).
+     */
+    private void archiveScoresIfNeeded() {
+        if (killService == null) {
+            return;
+        }
+        if (eventManager.isScoresArchived()) {
+            logger.info("Past game archive already done this arm — skipping");
+            return;
+        }
+        boolean empty = killService.rankingFinal().isEmpty();
+        var id = killService.archiveLiveToPastGame(Instant.now().getEpochSecond());
+        if (id.isPresent()) {
+            eventManager.markScoresArchived();
+            logger.info("Scores archived as past game #" + id.getAsInt());
+        } else if (empty) {
+            // No rows — mark done so we do not spin forever on empty events
+            eventManager.markScoresArchived();
+            logger.info("Past game archive skipped — no kill rows");
+        } else {
+            logger.warning("Past game archive failed — will retry on next ceremony pass");
+        }
     }
 
     private void onPhaseChange(EventPhase from, EventPhase to, Instant now) {

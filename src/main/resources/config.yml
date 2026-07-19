@@ -81,8 +81,10 @@ spawn:
     enabled: true
     # BetterRTP destination world; empty = RTP in the player's current world (same world)
     world: ""
-    # Temporary teleport-lock allow window for plugin-initiated RTP (ms)
-    bypass-ms: 60000
+    # Short safety window (ticks) so BetterRTP's PLUGIN teleport is not cancelled by the
+    # hunt lock. Default 40 = 2s. Cleared as soon as that TP lands. Does NOT unlock /spawn.
+    # Hard-capped at 100 ticks. (Legacy bypass-ms is still read, converted, and capped.)
+    bypass-ticks: 40
 
 # Hunt only: block TP commands, plugin teleports, and world-changes.
 # Cross-world moves (e.g. /spawn hub) always blocked. World change is not cancellable —
@@ -90,6 +92,8 @@ spawn:
 # Free cuboid only allows same-world hops that stay inside spawn/arena (not /spawn out).
 teleport-lock:
   enabled: true
+  # Console [tp-lock] lines explaining every allow/block decision (turn on to diagnose)
+  debug: false
   commands:
     - spawn
     - espawn
@@ -155,8 +159,12 @@ grace:
 
 tab:
   scoreboard:
-    # Inject into the existing TAB board (never replaces it).
-    # REQUIRES plugins/TAB/config.yml → scoreboard.enabled: true and a board with enough lines.
+    # Inject into the existing TAB board (never replaces the whole board).
+    # REQUIRES plugins/TAB/config.yml → scoreboard.enabled: true.
+    # false (default) = INSERT contiguous rows at offset (board grows; normal rows shift down).
+    # true = OLD replace mode: overwrite existing rows at those indices only (no grow/shift).
+    #        Needs enough lines already on the TAB board (filler rows at offset).
+    replace-existing: false
     # Relative lines start at this 0-based index; absolute "line:" keys still override.
     offset: 3
     # How many ranked slots to fill as %top1_name%/%top1_kills% … %topN_*
@@ -167,7 +175,10 @@ tab:
     #   %top1_name% %top1_kills% %top1_place% … through top-slots
     #   %top_killer% / %top_kills%  (aliases for #1)
     #   %phase%  %remaining% (until next phase)  %until_end% (until event end)
-    # PlaceholderAPI (soft): %preciv_top_1_name% %preciv_top_1_place% %preciv_top_1_kills% …
+    # PlaceholderAPI (soft):
+    #   live: %preciv_top_1_name% %preciv_top_1_place% %preciv_top_1_kills% …
+    #   last past game: %preciv_prev_top_1_name% %preciv_last_game_id% %preciv_game_count%
+    #   past game N (ids 1,2,3…): %preciv_game_3_top_1_name% %preciv_game_3_top_1_kills% %preciv_game_3_top_1_place%
     lines:
       - "&c&l#1 &f%top1_name% &8(%top1_kills%)"
       - "&6#2 &f%top2_name% &8(%top2_kills%)"

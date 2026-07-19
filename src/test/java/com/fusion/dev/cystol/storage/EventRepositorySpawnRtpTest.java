@@ -33,6 +33,7 @@ class EventRepositorySpawnRtpTest {
              ResultSet rs = st.executeQuery(
                      """
                              SELECT spawn_rtp_done, ffa_teleported, ceremony_done, paused,
+                                    scores_archived,
                                     countdown_anchor_epoch, hunt_entered_epoch, ffa_entered_epoch
                              FROM event_state WHERE id = 1
                              """)) {
@@ -41,6 +42,7 @@ class EventRepositorySpawnRtpTest {
             assertEquals(0, rs.getInt("ffa_teleported"));
             assertEquals(0, rs.getInt("ceremony_done"));
             assertEquals(0, rs.getInt("paused"));
+            assertEquals(0, rs.getInt("scores_archived"));
             rs.getObject("countdown_anchor_epoch");
             assertTrue(rs.wasNull());
             rs.getObject("hunt_entered_epoch");
@@ -180,17 +182,19 @@ class EventRepositorySpawnRtpTest {
         Instant a = Instant.parse("2026-01-01T00:00:00Z");
         Instant h = Instant.parse("2026-01-01T01:00:00Z");
         EventRepository.StoredEvent done = new EventRepository.StoredEvent(
-                null, null, null, EventPhase.HUNT, false, false, false, true, a, h, null);
+                null, null, null, EventPhase.HUNT, false, false, false, true, false, a, h, null);
         assertTrue(done.spawnRtpDone());
         assertFalse(done.ffaTeleported());
+        assertFalse(done.scoresArchived());
         assertEquals(a, done.countdownAnchor());
         assertEquals(h, done.huntEntered());
 
         EventRepository.StoredEvent clear = new EventRepository.StoredEvent(
-                null, null, null, EventPhase.IDLE, true, true, true, false, null, null, null);
+                null, null, null, EventPhase.IDLE, true, true, true, false, true, null, null, null);
         assertFalse(clear.spawnRtpDone());
         assertTrue(clear.ffaTeleported());
         assertTrue(clear.ceremonyDone());
         assertTrue(clear.paused());
+        assertTrue(clear.scoresArchived());
     }
 }

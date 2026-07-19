@@ -39,8 +39,8 @@ public final class EndCeremonyService {
     }
 
     public void runCeremony() {
-        // Single frozen ranking snapshot for the whole ceremony (cached in KillService).
-        List<DenseRanking.Entry> ranking = killService.ranking();
+        // Dense shared-place freeze for titles + rewards (live HUD used competition ranks).
+        List<DenseRanking.Entry> ranking = killService.rankingFinal();
         logger.info("Running end ceremony for " + ranking.size() + " ranked players");
 
         Map<UUID, DenseRanking.Entry> byId = new HashMap<>(Math.max(16, ranking.size() * 2));

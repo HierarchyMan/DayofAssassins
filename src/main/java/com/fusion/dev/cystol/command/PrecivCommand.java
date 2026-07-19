@@ -142,9 +142,10 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(lang.msg("killtop.empty"));
             return;
         }
+        int limit = lang.intValue("killtop.limit", 10);
         int shown = 0;
         for (DenseRanking.Entry e : ranking) {
-            if (shown++ >= 15) {
+            if (limit > 0 && shown >= limit) {
                 break;
             }
             sender.sendMessage(lang.msg("killtop.entry", Map.of(
@@ -152,6 +153,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
                     "player", e.name() == null ? "?" : e.name(),
                     "kills", String.valueOf(e.kills())
             )));
+            shown++;
         }
     }
 

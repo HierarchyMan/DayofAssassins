@@ -75,6 +75,14 @@ public final class Lang {
         return cfg().getString(path, def);
     }
 
+    public int intValue(String path, int def) {
+        if (!cfg().isSet(path)) {
+            plugin.getLogger().log(Level.WARNING, "Missing lang int key: {0}", path);
+            return def;
+        }
+        return cfg().getInt(path, def);
+    }
+
     public List<String> rawList(String path) {
         List<String> list = cfg().getStringList(path);
         if (list == null || list.isEmpty()) {

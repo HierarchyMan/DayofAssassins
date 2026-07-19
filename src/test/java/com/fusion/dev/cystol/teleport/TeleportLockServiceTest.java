@@ -48,6 +48,19 @@ class TeleportLockServiceTest {
     }
 
     @Test
+    void tempRtpAllowOnlyCoversPluginStyleNotCommand() {
+        // PLUGIN cause mid short RTP window → allow
+        assertFalse(TeleportLockService.shouldBlockTeleportPure(
+                true, false, false, true, true, true, false, false, true));
+        // COMMAND cause mid short RTP window → still block (no /spawn free pass)
+        assertTrue(TeleportLockService.shouldBlockTeleportPure(
+                true, false, false, true, false, true, false, false, true));
+        // no temp allow, COMMAND cross-world → block
+        assertTrue(TeleportLockService.shouldBlockTeleportPure(
+                true, false, false, false, false, true, false, false, true));
+    }
+
+    @Test
     void teleportPureSameWorldFreeZoneOnlyIfStayInside() {
         // same world, from free → to free: allow
         assertFalse(TeleportLockService.shouldBlockTeleportPure(
@@ -81,12 +94,23 @@ class TeleportLockServiceTest {
         assertFalse(service.hasTemporaryAllow(id));
         service.allowTemporarily(id, 5_000L);
         assertTrue(service.hasTemporaryAllow(id));
-        service.allowTemporarily(id, 1L);
+        // merge keeps the later expiry (Math::max) — still active
+        service.allowTemporarilyTicks(id, 1L);
         assertTrue(service.hasTemporaryAllow(id));
         UUID shortLived = UUID.randomUUID();
-        service.allowTemporarily(shortLived, 1L);
-        Thread.sleep(5L);
+        service.allowTemporarilyTicks(shortLived, 1L); // 50ms floor
+        Thread.sleep(80L);
         assertFalse(service.hasTemporaryAllow(shortLived));
+    }
+
+    @Test
+    void temporaryAllowTicksIsShortWindow() {
+        TeleportLockService service = new TeleportLockService(null, null);
+        UUID id = UUID.randomUUID();
+        service.allowTemporarilyTicks(id, 3L); // 150ms
+        assertTrue(service.hasTemporaryAllow(id));
+        service.clearTemporaryAllow(id);
+        assertFalse(service.hasTemporaryAllow(id));
     }
 
     @Test
@@ -117,5 +141,22 @@ class TeleportLockServiceTest {
         service.clearPlayer(id);
         assertFalse(service.hasTemporaryAllow(id));
         assertEquals(null, service.lastSafeLocation(id));
+    }
+
+    @Test
+    void pluginStyleCauseDoesNotIncludeCommand() {
+        assertTrue(TeleportLockService.isPluginStyleCause(
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.PLUGIN));
+        assertTrue(TeleportLockService.isPluginStyleCause(
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.UNKNOWN));
+        assertFalse(TeleportLockService.isPluginStyleCause(
+                org.bukkit.event.player.PlayerTeleportEvent.TeleportCause.COMMAND));
+        assertTrue(TeleportLockService.isPluginStyleCause(null));
+    }
+
+    @Test
+    void revertAllowTicksIsOnlyAFew() {
+        assertTrue(TeleportLockService.REVERT_ALLOW_TICKS >= 1L);
+        assertTrue(TeleportLockService.REVERT_ALLOW_TICKS <= 5L);
     }
 }

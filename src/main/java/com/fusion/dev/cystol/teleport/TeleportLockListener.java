@@ -15,12 +15,15 @@ import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Map;
+
 /**
  * Hunt-only movement lock layers:
  * <ul>
- *   <li>Cancel blocked TP commands (incl. {@code /spawn})</li>
+ *   <li>Cancel blocked TP commands (incl. {@code /spawn}) — LOWEST so we win before other plugins</li>
  *   <li>Cancel non-exempt teleports (esp. cross-world hub TPs)</li>
  *   <li>Revert illegal world changes (not cancellable — snap back next tick)</li>
+ *   <li>Consume short temp RTP allow when the plugin TP lands</li>
  * </ul>
  */
 public final class TeleportLockListener implements Listener {
@@ -35,14 +38,28 @@ public final class TeleportLockListener implements Listener {
         this.lang = lang;
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    /**
+     * LOWEST: intercept blacklisted commands before Essentials/etc. can run them.
+     * Temp RTP allow does not open commands. Message: {@code teleport.command-blocked}.
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onCommand(PlayerCommandPreprocessEvent event) {
         Player player = event.getPlayer();
-        if (!service.shouldBlockCommand(player, event.getMessage())) {
+        String raw = event.getMessage();
+        boolean block = service.shouldBlockCommand(player, raw);
+        if (service.isDebug()) {
+            service.debug(player.getName() + " cmd " + service.explainCommand(player, raw)
+                    + " raw=" + raw);
+        }
+        if (!block) {
             return;
         }
         event.setCancelled(true);
-        player.sendMessage(lang.msg("teleport.locked"));
+        String label = TeleportLockService.primaryCommandLabel(raw);
+        if (label.isEmpty()) {
+            label = "command";
+        }
+        player.sendMessage(lang.msg("teleport.command-blocked", Map.of("command", label)));
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -50,13 +67,23 @@ public final class TeleportLockListener implements Listener {
         Player player = event.getPlayer();
         Location from = event.getFrom();
         Location to = event.getTo();
-        if (!service.shouldBlockTeleport(player, from, to, event.getCause())) {
+        PlayerTeleportEvent.TeleportCause cause = event.getCause();
+        boolean block = service.shouldBlockTeleport(player, from, to, cause);
+        if (service.isDebug()) {
+            service.debug(player.getName() + " tp " + service.explainTeleport(player, from, to, cause));
+        }
+        if (!block) {
             // Allowed: remember destination so a following world-change is not reverted
             // (e.g. nether portal — TP cause exempt, then PlayerChangedWorldEvent fires).
             if (to != null && to.getWorld() != null) {
                 service.rememberSafeLocation(player, to);
             } else if (from != null) {
                 service.rememberSafeLocation(player, from);
+            }
+            // Consume short RTP allow as soon as the plugin TP actually lands
+            if (service.hasTemporaryAllow(player) && TeleportLockService.isPluginStyleCause(cause)) {
+                service.clearTemporaryAllow(player);
+                service.debug(player.getName() + " temp-rtp-allow consumed (plugin TP landed)");
             }
             return;
         }
@@ -74,7 +101,11 @@ public final class TeleportLockListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onWorldChange(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
-        if (!service.shouldBlockWorldChange(player, event.getFrom())) {
+        boolean block = service.shouldBlockWorldChange(player, event.getFrom());
+        if (service.isDebug()) {
+            service.debug(player.getName() + " world " + service.explainWorldChange(player, event.getFrom()));
+        }
+        if (!block) {
             service.rememberSafeLocation(player);
             return;
         }
@@ -86,23 +117,27 @@ public final class TeleportLockListener implements Listener {
             }
         }
         if (safe == null || safe.getWorld() == null || plugin == null) {
+            service.debug(player.getName() + " world-revert aborted (no safe dest)");
             return;
         }
 
         final Location dest = safe.clone();
-        // Brief allow so our own revert is not re-cancelled by onTeleport
-        service.allowTemporarily(player, 2_000L);
+        // Only a few ticks so our own revert is not re-cancelled by onTeleport
+        service.allowTemporarilyTicks(player, TeleportLockService.REVERT_ALLOW_TICKS);
         Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline()) {
                 return;
             }
-            if (!service.isLockActive() || service.isFullyExempt(player)) {
+            if (!service.isLockActive() || service.hasBypass(player)) {
                 service.rememberSafeLocation(player);
+                service.clearTemporaryAllow(player);
                 return;
             }
             player.teleport(dest);
             service.rememberSafeLocation(player, dest);
+            service.clearTemporaryAllow(player);
             player.sendMessage(lang.msg("teleport.locked"));
+            service.debug(player.getName() + " world-reverted → " + dest.getWorld().getName());
         });
     }
 
@@ -117,6 +152,11 @@ public final class TeleportLockListener implements Listener {
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
             if (player.isOnline()) {
                 service.rememberSafeLocation(player);
+                if (service.isDebug() && service.isLockActive()) {
+                    service.debug(player.getName() + " join safe remembered world="
+                            + (player.getWorld() != null ? player.getWorld().getName() : "null")
+                            + " phase=HUNT lock=on");
+                }
             }
         }, 1L);
     }

@@ -1,6 +1,7 @@
 package com.fusion.dev.cystol.event;
 
 import com.fusion.dev.cystol.config.PluginConfig;
+import com.fusion.dev.cystol.kill.KillService;
 import com.fusion.dev.cystol.storage.EventRepository;
 
 import java.sql.SQLException;
@@ -19,14 +20,19 @@ import java.util.logging.Logger;
  * <ul>
  *   <li>{@code countdownAnchor} — wall clock when start was first armed</li>
  *   <li>{@code huntEntered} — wall clock when live phase first became HUNT</li>
- *   <li>{@code ffaEntered} — wall clock when live phase first became FFA</li>
+ *   <li>{@code ffaEntered} — wall clock when live phase first entered FFA</li>
  * </ul>
+ *
+ * <p>On first HUNT enter of a schedule arm, live kill scores are wiped (past games stay).
+ * On event end, live scores are archived into chronological past games (see scheduler).
  */
 public final class EventManager {
 
     private final PluginConfig config;
     private final EventRepository repository;
     private final Logger logger;
+    /** Optional: wipe live kills the first time this arm enters HUNT. */
+    private volatile KillService killService;
 
     private volatile Instant start;
     private volatile Instant end;
@@ -37,6 +43,13 @@ public final class EventManager {
     private final AtomicBoolean paused = new AtomicBoolean(false);
     /** One-shot: hunt-kickoff spawn-cuboid BetterRTP mass dump completed for this schedule. */
     private final AtomicBoolean spawnRtpDone = new AtomicBoolean(false);
+    /** Live scores already copied into past_games for this schedule arm. */
+    private final AtomicBoolean scoresArchived = new AtomicBoolean(false);
+    /**
+     * When true, the next first HUNT enter wipes live kills.
+     * Set when a schedule arm is (re)armed; not set on mid-event restart recovery.
+     */
+    private final AtomicBoolean wipeKillsOnNextHuntEnter = new AtomicBoolean(false);
 
     /** Wall clock when start was first set for this schedule arm. */
     private volatile Instant countdownAnchor;
@@ -51,6 +64,13 @@ public final class EventManager {
         this.logger = logger;
     }
 
+    /**
+     * Wire kill wipe-on-hunt-start. Safe to call after construction (plugin boot order).
+     */
+    public void bindKillService(KillService killService) {
+        this.killService = killService;
+    }
+
     public void loadFromStorageAndConfig() {
         Instant now = Instant.now();
         try {
@@ -62,6 +82,7 @@ public final class EventManager {
             this.ceremonyDone.set(stored.ceremonyDone());
             this.paused.set(stored.paused());
             this.spawnRtpDone.set(stored.spawnRtpDone());
+            this.scoresArchived.set(stored.scoresArchived());
             this.countdownAnchor = stored.countdownAnchor();
             this.huntEntered = stored.huntEntered();
             this.ffaEntered = stored.ffaEntered();
@@ -196,14 +217,17 @@ public final class EventManager {
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        scoresArchived.set(false);
         // Any start arm is a new pre-hunt segment: re-anchor fill + drop live-enter stamps
         // so a second event after the first cannot keep draining from old hunt/ffa enters.
         if (instant == null) {
             clearAnchors();
+            wipeKillsOnNextHuntEnter.set(false);
         } else {
             countdownAnchor = Instant.now();
             huntEntered = null;
             ffaEntered = null;
+            wipeKillsOnNextHuntEnter.set(true);
         }
         pause(); // schedule edit freezes until host unpauses
     }
@@ -214,6 +238,7 @@ public final class EventManager {
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        scoresArchived.set(false);
         pause();
     }
 
@@ -239,9 +264,11 @@ public final class EventManager {
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        scoresArchived.set(false);
         rearmCountdownAnchor(times.start());
         huntEntered = null;
         ffaEntered = null;
+        wipeKillsOnNextHuntEnter.set(times.start() != null);
         pause();
     }
 
@@ -260,9 +287,11 @@ public final class EventManager {
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        scoresArchived.set(false);
         rearmCountdownAnchor(times.start());
         huntEntered = null;
         ffaEntered = null;
+        wipeKillsOnNextHuntEnter.set(times.start() != null);
         return unpause(t);
     }
 
@@ -295,10 +324,25 @@ public final class EventManager {
         persist();
     }
 
+    public boolean isScoresArchived() {
+        return scoresArchived.get();
+    }
+
+    public void markScoresArchived() {
+        scoresArchived.set(true);
+        persist();
+    }
+
+    public void clearScoresArchived() {
+        scoresArchived.set(false);
+        persist();
+    }
+
     public void clearFlags() {
         ffaTeleported.set(false);
         ceremonyDone.set(false);
         spawnRtpDone.set(false);
+        scoresArchived.set(false);
         persist();
     }
 
@@ -336,6 +380,8 @@ public final class EventManager {
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        scoresArchived.set(false);
+        wipeKillsOnNextHuntEnter.set(false);
         clearAnchors();
         pause();
     }
@@ -361,6 +407,7 @@ public final class EventManager {
             repository.save(new EventRepository.StoredEvent(
                     start, end, ffaOverride, p,
                     ffaTeleported.get(), ceremonyDone.get(), paused.get(), spawnRtpDone.get(),
+                    scoresArchived.get(),
                     countdownAnchor, huntEntered, ffaEntered
             ));
         } catch (SQLException e) {
@@ -372,6 +419,7 @@ public final class EventManager {
         return new EventRepository.StoredEvent(
                 start, end, ffaOverride, phase,
                 ffaTeleported.get(), ceremonyDone.get(), paused.get(), spawnRtpDone.get(),
+                scoresArchived.get(),
                 countdownAnchor, huntEntered, ffaEntered
         );
     }
@@ -392,17 +440,32 @@ public final class EventManager {
 
     /**
      * Stamp enter once per schedule arm. Safe under pause/unpause (only if null).
+     * When a schedule arm was re-armed, first HUNT enter wipes live kills (past games kept).
+     * Restart mid-hunt never sets {@link #wipeKillsOnNextHuntEnter}, so scores survive.
      */
     private void stampEnterIfNeeded(EventPhase live, Instant now) {
         if (live == EventPhase.HUNT && huntEntered == null) {
             huntEntered = now;
+            if (wipeKillsOnNextHuntEnter.compareAndSet(true, false)) {
+                wipeLiveKillsForNewHunt();
+            }
         } else if (live == EventPhase.FFA && ffaEntered == null) {
             ffaEntered = now;
         }
     }
 
+    private void wipeLiveKillsForNewHunt() {
+        scoresArchived.set(false);
+        KillService ks = killService;
+        if (ks != null) {
+            logger.info("Hunt arm opened — clearing live kill scores (past games retained)");
+            ks.clearAll();
+        }
+    }
+
     /**
      * Mid-event restart / legacy DB: backfill missing anchors so the bar has a segment.
+     * Does <strong>not</strong> wipe kills.
      */
     private void recoverAnchors(Instant now) {
         EventPhase live = timeline().phaseAt(now);
@@ -410,12 +473,12 @@ public final class EventManager {
             countdownAnchor = now;
         }
         if (live == EventPhase.HUNT && huntEntered == null) {
+            // Recover only — leave wipeKillsOnNextHuntEnter false so restart keeps scores
             huntEntered = start != null ? start : now;
         }
         if (live == EventPhase.FFA && ffaEntered == null) {
             ffaEntered = timeline().ffaMoment().orElse(start != null ? start : now);
         }
-        // Also stamp if currently live and null (covers load while unpaused mid-phase)
         if (!paused.get()) {
             stampEnterIfNeeded(live, now);
         }

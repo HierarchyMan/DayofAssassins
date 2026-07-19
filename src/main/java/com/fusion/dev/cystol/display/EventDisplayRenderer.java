@@ -41,7 +41,7 @@ import java.util.regex.Pattern;
  *       (FFA must not reuse a hunt title that still says “Finale in”).</li>
  *   <li>{@code %timer_label%} is the single source of truth for that prefix;
  *       bossbar lang templates should include it rather than hard-coding English.</li>
- *   <li>Scoreboard: inject only configured rows; never replace the whole board.</li>
+ *   <li>Scoreboard: inject only configured rows (board grows / originals shift); never replace the whole board.</li>
  * </ul>
  */
 public final class EventDisplayRenderer {
@@ -551,7 +551,7 @@ public final class EventDisplayRenderer {
 
     /**
      * Resolve only the configured event lines (index → text) for injection into an existing TAB board.
-     * Does <strong>not</strong> pad filler rows — non-configured indices are left untouched.
+     * Live display inserts/grows those rows on the board; non-configured indices are left untouched.
      * Applies {@link #normalizeScoreboardTemplate(String)} so legacy “next %remaining%” lines upgrade.
      */
     public static Map<Integer, String> renderScoreboardInjections(

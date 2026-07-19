@@ -87,9 +87,41 @@ public final class SqliteAccess {
                     CREATE TABLE IF NOT EXISTS kills (
                       uuid TEXT PRIMARY KEY,
                       name TEXT NOT NULL,
-                      kills INTEGER NOT NULL DEFAULT 0
+                      kills INTEGER NOT NULL DEFAULT 0,
+                      reached_at_ms INTEGER NOT NULL DEFAULT 0
                     )
                     """);
+            // Upgrade older DBs that lack first-to-reach timestamp
+            try {
+                st.executeUpdate("ALTER TABLE kills ADD COLUMN reached_at_ms INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            // Chronological past games: id 1, 2, 3… (AUTOINCREMENT)
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS past_games (
+                      id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      ended_at_epoch INTEGER NOT NULL
+                    )
+                    """);
+            st.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS past_game_kills (
+                      game_id INTEGER NOT NULL,
+                      uuid TEXT NOT NULL,
+                      name TEXT NOT NULL,
+                      kills INTEGER NOT NULL DEFAULT 0,
+                      place INTEGER NOT NULL DEFAULT 0,
+                      PRIMARY KEY (game_id, uuid),
+                      FOREIGN KEY (game_id) REFERENCES past_games(id) ON DELETE CASCADE
+                    )
+                    """);
+            // One-shot: live scores already copied into past_games for this schedule arm
+            try {
+                st.executeUpdate(
+                        "ALTER TABLE event_state ADD COLUMN scores_archived INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS metrics (
                       key TEXT PRIMARY KEY,

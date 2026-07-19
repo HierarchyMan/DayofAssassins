@@ -19,6 +19,7 @@ public final class EventRepository {
             boolean ceremonyDone,
             boolean paused,
             boolean spawnRtpDone,
+            boolean scoresArchived,
             Instant countdownAnchor,
             Instant huntEntered,
             Instant ffaEntered
@@ -37,6 +38,7 @@ public final class EventRepository {
                     """
                             SELECT start_epoch, end_epoch, ffa_override_epoch, phase,
                                    ffa_teleported, ceremony_done, paused, spawn_rtp_done,
+                                   scores_archived,
                                    countdown_anchor_epoch, hunt_entered_epoch, ffa_entered_epoch
                             FROM event_state WHERE id = 1
                             """)) {
@@ -44,7 +46,7 @@ public final class EventRepository {
                     if (!rs.next()) {
                         return new StoredEvent(
                                 null, null, null, EventPhase.IDLE,
-                                false, false, false, false,
+                                false, false, false, false, false,
                                 null, null, null
                         );
                     }
@@ -57,6 +59,7 @@ public final class EventRepository {
                             rs.getInt("ceremony_done") == 1,
                             rs.getInt("paused") == 1,
                             rs.getInt("spawn_rtp_done") == 1,
+                            rs.getInt("scores_archived") == 1,
                             epoch(rs.getObject("countdown_anchor_epoch")),
                             epoch(rs.getObject("hunt_entered_epoch")),
                             epoch(rs.getObject("ffa_entered_epoch"))
@@ -78,6 +81,7 @@ public final class EventRepository {
                       ceremony_done = ?,
                       paused = ?,
                       spawn_rtp_done = ?,
+                      scores_archived = ?,
                       countdown_anchor_epoch = ?,
                       hunt_entered_epoch = ?,
                       ffa_entered_epoch = ?
@@ -91,9 +95,10 @@ public final class EventRepository {
                 ps.setInt(6, state.ceremonyDone() ? 1 : 0);
                 ps.setInt(7, state.paused() ? 1 : 0);
                 ps.setInt(8, state.spawnRtpDone() ? 1 : 0);
-                setEpoch(ps, 9, state.countdownAnchor());
-                setEpoch(ps, 10, state.huntEntered());
-                setEpoch(ps, 11, state.ffaEntered());
+                ps.setInt(9, state.scoresArchived() ? 1 : 0);
+                setEpoch(ps, 10, state.countdownAnchor());
+                setEpoch(ps, 11, state.huntEntered());
+                setEpoch(ps, 12, state.ffaEntered());
                 ps.executeUpdate();
             }
         });

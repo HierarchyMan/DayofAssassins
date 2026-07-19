@@ -275,9 +275,28 @@ public final class PluginConfig {
         return v == null ? "" : v.trim();
     }
 
-    /** Temporary teleport-lock allow window for plugin-initiated spawn RTP (milliseconds). */
+    /**
+     * Short safety window (ticks) so BetterRTP's PLUGIN teleport is not cancelled.
+     * Default {@code 40} ticks (2s). Cleared early when the TP lands.
+     * Legacy {@code bypass-ms} is converted and hard-capped (never a 60s free pass).
+     */
+    public long huntRtpBypassTicks() {
+        if (cfg().isSet("spawn.hunt-rtp.bypass-ticks")) {
+            // Cap at 100 ticks (5s) — RTP allow is not a command/TP holiday
+            return Math.max(1L, Math.min(100L, cfg().getLong("spawn.hunt-rtp.bypass-ticks", 40L)));
+        }
+        // Legacy ms key: convert, but never honour multi-minute windows
+        if (cfg().isSet("spawn.hunt-rtp.bypass-ms")) {
+            long ms = Math.max(50L, cfg().getLong("spawn.hunt-rtp.bypass-ms", 2_000L));
+            long ticks = Math.max(1L, (ms + 49L) / 50L);
+            return Math.min(ticks, 100L);
+        }
+        return 40L;
+    }
+
+    /** {@link #huntRtpBypassTicks()} as milliseconds (tick × 50). */
     public long huntRtpBypassMs() {
-        return Math.max(1_000L, cfg().getLong("spawn.hunt-rtp.bypass-ms", 60_000L));
+        return huntRtpBypassTicks() * 50L;
     }
 
     public boolean effectsEnabled() {
@@ -429,6 +448,15 @@ public final class PluginConfig {
     }
 
     /**
+     * When {@code true}, scoreboard inject uses the legacy <em>replace</em> path: overwrite
+     * existing TAB rows at configured indices only (no {@code addLine}, no shift). Requires
+     * the board already to have enough lines. Default {@code false} = insert/grow mode.
+     */
+    public boolean scoreboardReplaceExisting() {
+        return cfg().getBoolean("tab.scoreboard.replace-existing", false);
+    }
+
+    /**
      * How many leaderboard slots to expose as {@code %topN_name%} / {@code %topN_kills%}
      * (and dense {@code %topN_place%}). Default 4.
      */
@@ -449,6 +477,7 @@ public final class PluginConfig {
 
     /**
      * Lines to inject into the existing TAB board — never a replacement scoreboard.
+     * Live display inserts contiguous relative blocks (board grows); see {@code TabDisplayService}.
      *
      * <p>Each entry is either:
      * <ul>
@@ -637,6 +666,14 @@ public final class PluginConfig {
 
     public boolean teleportLockEnabled() {
         return cfg().getBoolean("teleport-lock.enabled", true);
+    }
+
+    /**
+     * Console debug for every command/TP/world-change allow-or-block decision.
+     * Enable temporarily when diagnosing lock bypasses ({@code [tp-lock]} log prefix).
+     */
+    public boolean teleportLockDebug() {
+        return cfg().getBoolean("teleport-lock.debug", false);
     }
 
     /**
