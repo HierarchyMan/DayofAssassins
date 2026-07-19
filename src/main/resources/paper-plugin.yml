@@ -29,3 +29,8 @@ dependencies:
       load: BEFORE
       required: false
       join-classpath: true
+    # Soft: %preciv_top_N_* leaderboard placeholders. Plugin works without it.
+    PlaceholderAPI:
+      load: BEFORE
+      required: false
+      join-classpath: true

@@ -11,6 +11,7 @@ import com.fusion.dev.cystol.event.ScheduleJumps;
 import com.fusion.dev.cystol.fx.EffectService;
 import com.fusion.dev.cystol.kill.DenseRanking;
 import com.fusion.dev.cystol.kill.KillService;
+import com.fusion.dev.cystol.teleport.NoBypassService;
 import com.fusion.dev.cystol.util.TimeUtil;
 import com.fusion.dev.cystol.util.VanishService;
 import net.kyori.adventure.text.Component;
@@ -39,6 +40,7 @@ public final class AdminOps {
     private final Lang lang;
     private final EffectService effects;
     private final VanishService vanishService;
+    private final NoBypassService noBypass;
 
     public AdminOps(
             EventManager eventManager,
@@ -48,7 +50,8 @@ public final class AdminOps {
             PluginConfig config,
             Lang lang,
             EffectService effects,
-            VanishService vanishService
+            VanishService vanishService,
+            NoBypassService noBypass
     ) {
         this.eventManager = eventManager;
         this.eventScheduler = eventScheduler;
@@ -58,6 +61,7 @@ public final class AdminOps {
         this.lang = lang;
         this.effects = effects;
         this.vanishService = vanishService;
+        this.noBypass = noBypass;
     }
 
     public void status(CommandSender sender) {
@@ -107,6 +111,11 @@ public final class AdminOps {
                 "spawn_rtp_done", String.valueOf(eventManager.isSpawnRtpDone()),
                 "ceremony_done", String.valueOf(eventManager.isCeremonyDone())
         )));
+        if (noBypass != null) {
+            sender.sendMessage(lang.msg("admin.status.nobypass", Map.of(
+                    "state", noBypass.isActive() ? "ON" : "OFF"
+            )));
+        }
         sender.sendMessage(lang.msg("admin.status.kills", Map.of(
                 "rows", String.valueOf(killRows),
                 "top_killer", topName,

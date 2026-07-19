@@ -54,6 +54,8 @@ public final class EventScheduler {
     private Component outsideActionbarMessage;
     private final AtomicBoolean ffaTpInProgress = new AtomicBoolean(false);
     private BukkitTask ffaBatchTask;
+    /** Counts 1s ticks; every 5s during HUNT re-check spawn/arena RTP. */
+    private int huntRtpSweepCounter;
 
     public EventScheduler(
             JavaPlugin plugin,
@@ -156,6 +158,17 @@ public final class EventScheduler {
             maybeAnnounceFfa(now);
         }
 
+        // Same-world walk-in to spawn/arena does not fire world-change; periodic re-check.
+        if (phase == EventPhase.HUNT && spawnHuntRtpService != null) {
+            huntRtpSweepCounter++;
+            if (huntRtpSweepCounter >= 5) {
+                huntRtpSweepCounter = 0;
+                spawnHuntRtpService.sweepOnlineIfLive();
+            }
+        } else {
+            huntRtpSweepCounter = 0;
+        }
+
         if (phase == EventPhase.FFA && !eventManager.isFfaTeleported() && !ffaTpInProgress.get()) {
             String err = runFfaTeleport();
             if (err != null) {
@@ -180,7 +193,7 @@ public final class EventScheduler {
     }
 
     /**
-     * Admin force: re-run spawn-cuboid hunt RTP mass dump if currently live HUNT.
+     * Admin force: re-run spawn/arena hunt RTP mass dump if currently live HUNT.
      * @return null on success, otherwise a lang-key suffix reason
      */
     public String forceSpawnHuntRtp() {

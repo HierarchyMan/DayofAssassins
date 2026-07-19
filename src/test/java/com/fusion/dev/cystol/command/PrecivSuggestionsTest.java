@@ -21,13 +21,15 @@ class PrecivSuggestionsTest {
 
     @Test
     void rootRespectsPermissionsAndPrefix() {
-        assertEquals(List.of("compass", "killtop", "gui", "admin"),
+        assertEquals(List.of("compass", "killtop", "gui", "nobypass", "admin"),
                 PrecivSuggestions.complete("", true, true, true, NOW));
         assertEquals(List.of("compass"), PrecivSuggestions.complete("", true, false, false, NOW));
         assertEquals(List.of("admin"), PrecivSuggestions.complete("ad", false, false, true, NOW));
         assertEquals(List.of("gui"), PrecivSuggestions.complete("g", false, false, true, NOW));
+        assertEquals(List.of("nobypass"), PrecivSuggestions.complete("no", false, false, true, NOW));
         assertTrue(PrecivSuggestions.complete("", false, false, false, NOW).isEmpty());
         assertTrue(PrecivSuggestions.complete("admin ", true, true, false, NOW).isEmpty());
+        assertTrue(PrecivSuggestions.complete("nobypass", true, true, false, NOW).isEmpty());
     }
 
     @Test

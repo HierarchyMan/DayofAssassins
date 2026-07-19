@@ -21,7 +21,7 @@ public final class PrecivSuggestions {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy/MM/dd");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-    private static final List<String> ROOT = List.of("compass", "killtop", "gui", "admin");
+    private static final List<String> ROOT = List.of("compass", "killtop", "gui", "nobypass", "admin");
     private static final List<String> ADMIN = List.of(
             "status",
             "startnow",
@@ -138,7 +138,7 @@ public final class PrecivSuggestions {
         return switch (root) {
             case "compass" -> canCompass;
             case "killtop" -> canKilltop;
-            case "gui", "admin" -> canAdmin;
+            case "gui", "admin", "nobypass" -> canAdmin;
             default -> false;
         };
     }

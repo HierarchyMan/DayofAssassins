@@ -79,6 +79,10 @@ public final class PaperCommandRegistrar {
                     .requires(src -> src.getSender().hasPermission("preciv.admin") || src.getSender().isOp())
                     .executes(ctx -> run(precivCommand, ctx.getSource().getSender(), new String[]{"gui"})));
 
+            preciv.then(Commands.literal("nobypass")
+                    .requires(src -> src.getSender().hasPermission("preciv.admin") || src.getSender().isOp())
+                    .executes(ctx -> run(precivCommand, ctx.getSource().getSender(), new String[]{"nobypass"})));
+
             // admin tree
             LiteralArgumentBuilder<CommandSourceStack> admin = Commands.literal("admin")
                     .requires(src -> src.getSender().hasPermission("preciv.admin") || src.getSender().isOp())
@@ -86,7 +90,8 @@ public final class PaperCommandRegistrar {
 
             for (String sub : List.of(
                     "status", "startnow", "ffanow", "endnow", "pause", "unpause",
-                    "forcetp", "forceceremony", "resetflags", "eligible", "reload", "wand"
+                    "forcetp", "forcespawnrtp", "forceceremony", "resetflags", "eligible",
+                    "reload", "wand", "spawnwand"
             )) {
                 String s = sub;
                 admin.then(Commands.literal(s)
@@ -116,7 +121,9 @@ public final class PaperCommandRegistrar {
                     .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),
                             new String[]{"admin", "set"}));
 
-            for (String target : List.of("centerspawn", "pos1", "pos2")) {
+            for (String target : List.of(
+                    "centerspawn", "pos1", "pos2", "spawnpos1", "spawnpos2"
+            )) {
                 String t = target;
                 set.then(Commands.literal(t)
                         .executes(ctx -> run(precivCommand, ctx.getSource().getSender(),

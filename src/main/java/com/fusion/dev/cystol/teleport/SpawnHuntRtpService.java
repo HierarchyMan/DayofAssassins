@@ -18,10 +18,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 /**
- * Hunt-only: BetterRTP players standing in the configured spawn cuboid.
+ * Hunt-only: BetterRTP players standing in the spawn cuboid <em>or</em> the FFA arena cuboid.
+ * Same-world setups are the normal case (no separate spawn world required).
  * <ul>
  *   <li>Kickoff mass dump once when entering HUNT (persisted flag)</li>
- *   <li>Per-join dump while live HUNT (not paused), if join location is in cuboid</li>
+ *   <li>Join / world-change / post-teleport while live HUNT if feet land in either cuboid</li>
  * </ul>
  */
 public final class SpawnHuntRtpService {
@@ -34,6 +35,7 @@ public final class SpawnHuntRtpService {
     private final PluginConfig config;
     private final TeleportLockService teleportLock;
     private final BetterRtpBridge betterRtp;
+    private final NoBypassService noBypass;
     private final Logger logger;
 
     private final AtomicBoolean kickoffInProgress = new AtomicBoolean(false);
@@ -45,6 +47,7 @@ public final class SpawnHuntRtpService {
             PluginConfig config,
             TeleportLockService teleportLock,
             BetterRtpBridge betterRtp,
+            NoBypassService noBypass,
             Logger logger
     ) {
         this.plugin = plugin;
@@ -52,6 +55,7 @@ public final class SpawnHuntRtpService {
         this.config = config;
         this.teleportLock = teleportLock;
         this.betterRtp = betterRtp;
+        this.noBypass = noBypass;
         this.logger = logger;
     }
 
@@ -68,7 +72,7 @@ public final class SpawnHuntRtpService {
     }
 
     /**
-     * Whether hunt-spawn RTP may run right now for join / force (live HUNT, not paused, enabled).
+     * Whether hunt RTP may run right now for join / force (live HUNT, not paused, enabled).
      */
     public boolean isLiveHuntRtpWindow() {
         return isLiveHuntRtpWindow(config.huntRtpEnabled(), eventManager.isPaused(), eventManager.phase());
@@ -94,8 +98,7 @@ public final class SpawnHuntRtpService {
     }
 
     /**
-     * Pure location gate: configured spawn world + cuboid contains feet.
-     * Spectator / bypass / online checks stay on the Player path.
+     * Pure location gate: feet in configured spawn cuboid (world-checked).
      */
     public static boolean matchesSpawnCuboid(
             boolean spawnConfigured,
@@ -109,33 +112,93 @@ public final class SpawnHuntRtpService {
         if (!spawnConfigured || cuboid == null) {
             return false;
         }
-        if (spawnWorld == null || playerWorld == null || !spawnWorld.equals(playerWorld)) {
+        if (!worldNamesEqual(spawnWorld, playerWorld)) {
             return false;
         }
         return cuboid.contains(x, y, z);
     }
 
     /**
-     * Location gate used by kickoff and join. Spectators and bypass perm excluded.
+     * Pure location gate: feet in FFA arena cuboid (world-checked).
      */
-    public boolean isEligibleInSpawnCuboid(Player player) {
+    public static boolean matchesArenaCuboid(
+            String arenaWorld,
+            CuboidBounds cuboid,
+            String playerWorld,
+            double x,
+            double y,
+            double z
+    ) {
+        if (cuboid == null || !worldNamesEqual(arenaWorld, playerWorld)) {
+            return false;
+        }
+        return cuboid.contains(x, y, z);
+    }
+
+    /**
+     * Pure combined gate: spawn cuboid OR arena cuboid (either is enough).
+     */
+    public static boolean matchesEvictZone(
+            boolean spawnConfigured,
+            String spawnWorld,
+            CuboidBounds spawnCuboid,
+            String arenaWorld,
+            CuboidBounds arenaCuboid,
+            String playerWorld,
+            double x,
+            double y,
+            double z
+    ) {
+        if (matchesSpawnCuboid(spawnConfigured, spawnWorld, spawnCuboid, playerWorld, x, y, z)) {
+            return true;
+        }
+        return matchesArenaCuboid(arenaWorld, arenaCuboid, playerWorld, x, y, z);
+    }
+
+    private static boolean worldNamesEqual(String a, String b) {
+        if (a == null || b == null || a.isBlank() || b.isBlank()) {
+            return false;
+        }
+        return a.equalsIgnoreCase(b);
+    }
+
+    /**
+     * Whether RTP bypass perm is honored (false when nobypass mode is active).
+     */
+    public boolean hasRtpBypass(Player player) {
+        if (player == null) {
+            return false;
+        }
+        if (noBypass != null && noBypass.isActive()) {
+            return false;
+        }
+        return player.hasPermission(BYPASS_PERM);
+    }
+
+    /**
+     * Location gate used by kickoff, join, world-change, post-TP.
+     * Spectators and (when honored) bypass perm excluded.
+     */
+    public boolean isEligibleForHuntRtp(Player player) {
         if (player == null || !player.isOnline()) {
             return false;
         }
         if (player.getGameMode() == GameMode.SPECTATOR) {
             return false;
         }
-        if (player.hasPermission(BYPASS_PERM)) {
+        if (hasRtpBypass(player)) {
             return false;
         }
         Location loc = player.getLocation();
         if (loc.getWorld() == null) {
             return false;
         }
-        return matchesSpawnCuboid(
+        return matchesEvictZone(
                 config.spawnZoneConfigured(),
                 config.spawnWorld(),
                 config.spawnCuboid(),
+                config.arenaWorld(),
+                config.arenaCuboid(),
                 loc.getWorld().getName(),
                 loc.getX(),
                 loc.getY(),
@@ -143,18 +206,30 @@ public final class SpawnHuntRtpService {
         );
     }
 
-    public List<Player> eligibleOnlineInSpawn() {
+    /** @deprecated use {@link #isEligibleForHuntRtp(Player)} */
+    @Deprecated
+    public boolean isEligibleInSpawnCuboid(Player player) {
+        return isEligibleForHuntRtp(player);
+    }
+
+    public List<Player> eligibleOnline() {
         List<Player> out = new ArrayList<>();
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (isEligibleInSpawnCuboid(p)) {
+            if (isEligibleForHuntRtp(p)) {
                 out.add(p);
             }
         }
         return out;
     }
 
+    /** @deprecated use {@link #eligibleOnline()} */
+    @Deprecated
+    public List<Player> eligibleOnlineInSpawn() {
+        return eligibleOnline();
+    }
+
     /**
-     * One-shot kickoff mass dump. Marks {@code spawn_rtp_done} even if 0 players / unconfigured / no bridge
+     * One-shot kickoff mass dump. Marks {@code spawn_rtp_done} even if 0 players / no bridge
      * so phase ticks do not retry forever.
      *
      * @return null on accepted start (or intentional no-op success), else reason key suffix for admin messages
@@ -171,35 +246,29 @@ public final class SpawnHuntRtpService {
             return "in-progress";
         }
         try {
-            if (!config.spawnZoneConfigured()) {
-                eventManager.markSpawnRtpDone();
-                logger.warning("Hunt spawn RTP kickoff skipped: spawn zone not configured");
-                kickoffInProgress.set(false);
-                return "unconfigured";
-            }
             if (!betterRtp.isAvailable()) {
                 eventManager.markSpawnRtpDone();
-                logger.warning("Hunt spawn RTP kickoff skipped: BetterRTP unavailable (" + betterRtp.backendLabel() + ")");
+                logger.warning("Hunt spawn/arena RTP kickoff skipped: BetterRTP unavailable ("
+                        + betterRtp.backendLabel() + ")");
                 kickoffInProgress.set(false);
                 return "no-bridge";
             }
 
-            List<Player> eligible = eligibleOnlineInSpawn();
+            List<Player> eligible = eligibleOnline();
             eventManager.markSpawnRtpDone();
             if (eligible.isEmpty()) {
-                logger.info("Hunt spawn RTP kickoff: 0 players in spawn cuboid");
+                logger.info("Hunt spawn/arena RTP kickoff: 0 eligible players in spawn or arena cuboid");
                 kickoffInProgress.set(false);
                 return null;
             }
             startBatch(eligible, () -> {
                 kickoffInProgress.set(false);
-                logger.info("Hunt spawn RTP kickoff complete for " + eligible.size() + " player(s)");
+                logger.info("Hunt spawn/arena RTP kickoff complete for " + eligible.size() + " player(s)");
             });
             return null;
         } catch (RuntimeException e) {
             kickoffInProgress.set(false);
-            logger.warning("Hunt spawn RTP kickoff failed: " + e.getMessage());
-            // still mark done to avoid infinite retry; admin can forcespawnrtp / resetflags
+            logger.warning("Hunt spawn/arena RTP kickoff failed: " + e.getMessage());
             if (!eventManager.isSpawnRtpDone()) {
                 eventManager.markSpawnRtpDone();
             }
@@ -207,26 +276,23 @@ public final class SpawnHuntRtpService {
         }
     }
 
-    /**
-     * Admin force: clear one-shot, re-run mass dump if currently live HUNT.
-     *
-     * @return null on success with count message data via {@link #lastForceCount()}, else reason suffix
-     */
     private volatile int lastForceCount;
 
     public int lastForceCount() {
         return lastForceCount;
     }
 
+    /**
+     * Admin force: clear one-shot, re-run mass dump if currently live HUNT.
+     *
+     * @return null on success with count via {@link #lastForceCount()}, else reason suffix
+     */
     public String forceKickoff() {
         if (!config.huntRtpEnabled()) {
             return "disabled";
         }
         if (!isLiveHuntRtpWindow()) {
             return "not-hunt";
-        }
-        if (!config.spawnZoneConfigured()) {
-            return "unconfigured";
         }
         if (!betterRtp.isAvailable()) {
             return "no-bridge";
@@ -235,17 +301,16 @@ public final class SpawnHuntRtpService {
             return "in-progress";
         }
         eventManager.clearSpawnRtpDone();
-        lastForceCount = eligibleOnlineInSpawn().size();
+        lastForceCount = eligibleOnline().size();
         String err = runKickoffIfNeeded();
         if (err == null) {
             return null;
         }
-        // already-done shouldn't happen after clear; map others
         return err;
     }
 
     /**
-     * Single-player path for join (and internal batch). Applies temp teleport-lock allow then BetterRTP.
+     * Single-player path. Applies temp teleport-lock allow then BetterRTP.
      *
      * @return true if request was handed to BetterRTP
      */
@@ -253,23 +318,27 @@ public final class SpawnHuntRtpService {
         if (!config.huntRtpEnabled() || !betterRtp.isAvailable()) {
             return false;
         }
-        if (!isEligibleInSpawnCuboid(player)) {
+        if (!isEligibleForHuntRtp(player)) {
             return false;
         }
         return rtpPlayerUnchecked(player);
     }
 
     /**
-     * Join path: only while live HUNT window; re-check eligibility after delay.
+     * Join / world-change / post-TP path: only while live HUNT window.
      */
-    public void maybeRtpOnJoin(Player player) {
+    public void maybeRtpWhileLive(Player player, String reason) {
         if (player == null || !player.isOnline()) {
             return;
         }
         if (!isLiveHuntRtpWindow()) {
             return;
         }
-        if (!isEligibleInSpawnCuboid(player)) {
+        // Avoid re-entry while a plugin RTP allow window is open (BetterRTP in flight).
+        if (teleportLock.hasTemporaryAllow(player)) {
+            return;
+        }
+        if (!isEligibleForHuntRtp(player)) {
             return;
         }
         if (!betterRtp.isAvailable()) {
@@ -277,7 +346,34 @@ public final class SpawnHuntRtpService {
         }
         boolean ok = rtpPlayerUnchecked(player);
         if (ok) {
-            logger.info("Hunt spawn RTP on join for " + player.getName());
+            String tag = reason == null || reason.isBlank() ? "event" : reason;
+            logger.info("Hunt spawn/arena RTP (" + tag + ") for " + player.getName());
+        }
+    }
+
+    /** Join path (kept name for listeners). */
+    public void maybeRtpOnJoin(Player player) {
+        maybeRtpWhileLive(player, "join");
+    }
+
+    public void maybeRtpOnWorldChange(Player player) {
+        maybeRtpWhileLive(player, "world-change");
+    }
+
+    public void maybeRtpAfterTeleport(Player player) {
+        maybeRtpWhileLive(player, "teleport");
+    }
+
+    /**
+     * Periodic safety net (same-world walk-in): RTP anyone still standing in spawn/arena
+     * during live HUNT. Skips players mid temp-allow / already ineligible.
+     */
+    public void sweepOnlineIfLive() {
+        if (!isLiveHuntRtpWindow() || !betterRtp.isAvailable()) {
+            return;
+        }
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            maybeRtpWhileLive(p, "sweep");
         }
     }
 
@@ -287,6 +383,9 @@ public final class SpawnHuntRtpService {
         return betterRtp.requestRtp(player, dest);
     }
 
+    /**
+     * Configured dest world if set and loaded; otherwise player's current world (same-world RTP).
+     */
     private World resolveRtpWorld(Player player) {
         String configured = config.huntRtpWorld();
         if (configured != null && !configured.isBlank()) {
@@ -323,8 +422,8 @@ public final class SpawnHuntRtpService {
                 if (p == null || !p.isOnline()) {
                     continue;
                 }
-                // Re-check cuboid at fire time so people who walked out aren't forced
-                if (!isEligibleInSpawnCuboid(p)) {
+                // Re-check zone at fire time so people who walked out aren't forced
+                if (!isEligibleForHuntRtp(p)) {
                     continue;
                 }
                 rtpPlayerUnchecked(p);

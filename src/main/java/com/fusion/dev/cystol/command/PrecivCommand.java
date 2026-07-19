@@ -8,6 +8,7 @@ import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.host.HostGui;
 import com.fusion.dev.cystol.kill.DenseRanking;
 import com.fusion.dev.cystol.kill.KillService;
+import com.fusion.dev.cystol.teleport.NoBypassService;
 import com.fusion.dev.cystol.util.TimeUtil;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
@@ -34,6 +35,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
     private final Lang lang;
     private final AdminOps adminOps;
     private final HostGui hostGui;
+    private final NoBypassService noBypass;
 
     public PrecivCommand(
             EventManager eventManager,
@@ -42,7 +44,8 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             PluginConfig config,
             Lang lang,
             AdminOps adminOps,
-            HostGui hostGui
+            HostGui hostGui,
+            NoBypassService noBypass
     ) {
         this.eventManager = eventManager;
         this.killService = killService;
@@ -51,6 +54,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
         this.lang = lang;
         this.adminOps = adminOps;
         this.hostGui = hostGui;
+        this.noBypass = noBypass;
     }
 
     /** Paper Brigadier entry (no Bukkit {@link Command} instance). */
@@ -61,7 +65,7 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            sender.sendMessage(Component.text("Usage: /preciv <compass|killtop|gui|admin>"));
+            sender.sendMessage(Component.text("Usage: /preciv <compass|killtop|gui|nobypass|admin>"));
             return true;
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
@@ -69,10 +73,24 @@ public final class PrecivCommand implements CommandExecutor, TabCompleter {
             case "compass" -> handleCompass(sender);
             case "killtop" -> handleKilltop(sender);
             case "gui" -> handleGui(sender);
+            case "nobypass" -> handleNobypass(sender);
             case "admin" -> handleAdmin(sender, Arrays.copyOfRange(args, 1, args.length));
-            default -> sender.sendMessage(Component.text("Usage: /preciv <compass|killtop|gui|admin>"));
+            default -> sender.sendMessage(Component.text("Usage: /preciv <compass|killtop|gui|nobypass|admin>"));
         }
         return true;
+    }
+
+    private void handleNobypass(CommandSender sender) {
+        if (!sender.hasPermission("preciv.admin")) {
+            sender.sendMessage(lang.msg("messages.no-permission"));
+            return;
+        }
+        if (noBypass == null) {
+            sender.sendMessage(Component.text("Nobypass is not available."));
+            return;
+        }
+        boolean nowOn = noBypass.toggle();
+        sender.sendMessage(lang.msg(nowOn ? "messages.nobypass-on" : "messages.nobypass-off"));
     }
 
     private void handleGui(CommandSender sender) {

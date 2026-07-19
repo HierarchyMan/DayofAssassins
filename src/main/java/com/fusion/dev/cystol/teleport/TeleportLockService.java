@@ -23,12 +23,18 @@ public final class TeleportLockService {
 
     private final EventManager eventManager;
     private final PluginConfig config;
-    /** Temporary allow for plugin-initiated RTP (BetterRTP may finish after player leaves spawn). */
+    private final NoBypassService noBypass;
+    /** Temporary allow for plugin-initiated RTP (BetterRTP may finish after player leaves zone). */
     private final ConcurrentHashMap<UUID, Long> temporaryAllowUntilMs = new ConcurrentHashMap<>();
 
     public TeleportLockService(EventManager eventManager, PluginConfig config) {
+        this(eventManager, config, null);
+    }
+
+    public TeleportLockService(EventManager eventManager, PluginConfig config, NoBypassService noBypass) {
         this.eventManager = eventManager;
         this.config = config;
+        this.noBypass = noBypass;
     }
 
     public boolean isLockActive() {
@@ -38,13 +44,22 @@ public final class TeleportLockService {
         return eventManager.phase() == EventPhase.HUNT;
     }
 
+    /**
+     * Bypass is ignored while {@link NoBypassService} is active.
+     */
     public boolean hasBypass(Player player) {
-        return player != null && player.hasPermission(BYPASS_PERM);
+        if (player == null) {
+            return false;
+        }
+        if (noBypass != null && noBypass.isActive()) {
+            return false;
+        }
+        return player.hasPermission(BYPASS_PERM);
     }
 
     /**
      * Allow teleports/commands for this player until {@code now + durationMs}.
-     * Used so hunt-spawn BetterRTP is never cancelled by this plugin's lock.
+     * Used so hunt BetterRTP is never cancelled by this plugin's lock.
      */
     public void allowTemporarily(UUID uuid, long durationMs) {
         if (uuid == null) {
@@ -93,9 +108,7 @@ public final class TeleportLockService {
 
     /**
      * Block command if lock is on, no bypass, and label is in the blocked list.
-     * Zone is not checked here — players in spawn/arena still should not fire warp/home
-     * from those zones if we only care about destination… Spec: free TP while <em>in</em>
-     * spawn or arena (from-location). So if they are in an allowed zone, do not block.
+     * Free TP while standing in spawn or arena (from-location).
      */
     public boolean shouldBlockCommand(Player player, String rawMessage) {
         if (!isLockActive() || hasBypass(player) || hasTemporaryAllow(player)) {
@@ -143,7 +156,7 @@ public final class TeleportLockService {
         if (loc == null || loc.getWorld() == null || worldName == null || cuboid == null) {
             return false;
         }
-        if (!loc.getWorld().getName().equals(worldName)) {
+        if (!loc.getWorld().getName().equalsIgnoreCase(worldName)) {
             return false;
         }
         return cuboid.contains(loc.getX(), loc.getY(), loc.getZ());

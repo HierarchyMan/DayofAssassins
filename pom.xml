@@ -34,6 +34,10 @@
             <id>triumphteam</id>
             <url>https://repo.triumphteam.dev/releases</url>
         </repository>
+        <repository>
+            <id>placeholderapi</id>
+            <url>https://repo.extendedclip.com/content/repositories/placeholderapi/</url>
+        </repository>
     </repositories>
 
     <dependencies>
@@ -59,6 +63,13 @@
             <groupId>me.chancesd.pvpmanager</groupId>
             <artifactId>pvpmanager-plugin</artifactId>
             <version>3.19.10</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Soft depend at runtime (paper-plugin.yml). Compile-only for expansion class. -->
+        <dependency>
+            <groupId>me.clip</groupId>
+            <artifactId>placeholderapi</artifactId>
+            <version>2.11.6</version>
             <scope>provided</scope>
         </dependency>
         <!-- Shaded + relocated; only inventory/holder APIs used. Name/lore set outside Triumph builders. -->

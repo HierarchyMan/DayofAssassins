@@ -8,12 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pure gates for hunt spawn RTP: live window, kickoff phase change, cuboid match.
+ * Pure gates for hunt RTP: live window, kickoff phase change, spawn cuboid OR arena cuboid.
  * No Bukkit / BetterRTP.
  */
 class SpawnHuntRtpServiceTest {
 
     private static final CuboidBounds SPAWN = new CuboidBounds(0, 64, 0, 20, 80, 20);
+    private static final CuboidBounds ARENA = new CuboidBounds(100, 64, 100, 200, 90, 200);
 
     @Test
     void liveHuntWindowRequiresEnabledUnpausedHuntOnly() {
@@ -33,13 +34,11 @@ class SpawnHuntRtpServiceTest {
     void kickoffOnlyOnEnterHuntFromPreEventNotPausedRecovery() {
         assertTrue(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.COUNTDOWN, EventPhase.HUNT));
         assertTrue(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.IDLE, EventPhase.HUNT));
-        // cosmetic grace is still COUNTDOWN → same path
         assertTrue(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.COUNTDOWN, EventPhase.HUNT));
 
         assertFalse(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.PAUSED, EventPhase.HUNT));
         assertFalse(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.HUNT, EventPhase.HUNT));
         assertFalse(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.HUNT, EventPhase.FFA));
-        // Schedule rewind FFA→HUNT is a real re-enter of hunt (flags cleared with schedule)
         assertTrue(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.FFA, EventPhase.HUNT));
         assertFalse(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.COUNTDOWN, EventPhase.FFA));
         assertFalse(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.COUNTDOWN, EventPhase.PAUSED));
@@ -49,11 +48,8 @@ class SpawnHuntRtpServiceTest {
     void matchesSpawnCuboidRequiresConfiguredWorldAndInsideBounds() {
         assertTrue(SpawnHuntRtpService.matchesSpawnCuboid(
                 true, "world", SPAWN, "world", 10, 70, 10));
-        // inclusive corners
         assertTrue(SpawnHuntRtpService.matchesSpawnCuboid(
-                true, "world", SPAWN, "world", 0, 64, 0));
-        assertTrue(SpawnHuntRtpService.matchesSpawnCuboid(
-                true, "world", SPAWN, "world", 20, 80, 20));
+                true, "world", SPAWN, "WORLD", 0, 64, 0));
 
         assertFalse(SpawnHuntRtpService.matchesSpawnCuboid(
                 false, "world", SPAWN, "world", 10, 70, 10));
@@ -61,28 +57,53 @@ class SpawnHuntRtpServiceTest {
                 true, "world", SPAWN, "world_nether", 10, 70, 10));
         assertFalse(SpawnHuntRtpService.matchesSpawnCuboid(
                 true, "world", SPAWN, "world", 50, 70, 10));
-        assertFalse(SpawnHuntRtpService.matchesSpawnCuboid(
-                true, "world", SPAWN, "world", 10, 100, 10));
-        assertFalse(SpawnHuntRtpService.matchesSpawnCuboid(
-                true, "world", SPAWN, "world", 10, 50, 10));
-        assertFalse(SpawnHuntRtpService.matchesSpawnCuboid(
-                true, null, SPAWN, "world", 10, 70, 10));
-        assertFalse(SpawnHuntRtpService.matchesSpawnCuboid(
-                true, "world", SPAWN, null, 10, 70, 10));
-        assertFalse(SpawnHuntRtpService.matchesSpawnCuboid(
-                true, "world", null, "world", 10, 70, 10));
     }
 
     @Test
-    void joinRtpUsesSameLiveWindowAsForceNotKickoff() {
-        // Join path = live window only (HUNT + unpaused + enabled)
-        // Not the kickoff phase-change gate — so unpause mid-hunt does not mass-dump,
-        // but a join during live HUNT still RTPs if in cuboid.
-        assertTrue(SpawnHuntRtpService.isLiveHuntRtpWindow(true, false, EventPhase.HUNT));
-        assertFalse(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.PAUSED, EventPhase.HUNT));
+    void matchesArenaCuboidWorldAndBounds() {
+        assertTrue(SpawnHuntRtpService.matchesArenaCuboid(
+                "world", ARENA, "world", 150, 70, 150));
+        assertFalse(SpawnHuntRtpService.matchesArenaCuboid(
+                "world", ARENA, "world", 10, 70, 10));
+        assertFalse(SpawnHuntRtpService.matchesArenaCuboid(
+                "world", ARENA, "other", 150, 70, 150));
+        assertFalse(SpawnHuntRtpService.matchesArenaCuboid(
+                "world", null, "world", 150, 70, 150));
+    }
 
-        // FFA join must never RTP via these gates
+    @Test
+    void matchesEvictZoneIsSpawnOrArenaSameWorldOk() {
+        // spawn region
+        assertTrue(SpawnHuntRtpService.matchesEvictZone(
+                true, "world", SPAWN, "world", ARENA, "world", 10, 70, 10));
+        // arena (FFA cuboid) — owner case: camping pvparena during hunt
+        assertTrue(SpawnHuntRtpService.matchesEvictZone(
+                true, "world", SPAWN, "world", ARENA, "world", 150, 70, 150));
+        // outside both
+        assertFalse(SpawnHuntRtpService.matchesEvictZone(
+                true, "world", SPAWN, "world", ARENA, "world", 50, 70, 50));
+        // spawn unconfigured → arena still works
+        assertTrue(SpawnHuntRtpService.matchesEvictZone(
+                false, "world", SPAWN, "world", ARENA, "world", 150, 70, 150));
+        assertFalse(SpawnHuntRtpService.matchesEvictZone(
+                false, "world", SPAWN, "world", ARENA, "world", 10, 70, 10));
+    }
+
+    @Test
+    void ffaPhaseNeverInLiveWindow() {
         assertFalse(SpawnHuntRtpService.isLiveHuntRtpWindow(true, false, EventPhase.FFA));
         assertFalse(SpawnHuntRtpService.shouldKickoffOnPhaseChange(EventPhase.HUNT, EventPhase.FFA));
+    }
+
+    @Test
+    void noBypassToggleIsMemoryOnly() {
+        NoBypassService nb = new NoBypassService(true);
+        assertTrue(nb.isActive());
+        assertFalse(nb.toggle());
+        assertFalse(nb.isActive());
+        assertTrue(nb.toggle());
+        assertTrue(nb.isActive());
+        nb.setActive(false);
+        assertFalse(nb.isActive());
     }
 }

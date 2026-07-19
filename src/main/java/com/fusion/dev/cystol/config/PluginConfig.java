@@ -254,13 +254,21 @@ public final class PluginConfig {
         return cfg().getInt("spawn-wand.custom-model-data", 0);
     }
 
-    /** When true, kickoff + join spawn-cuboid BetterRTP is active. */
+    /**
+     * When true, plugin boots with nobypass ON (bypass perms ignored for TP lock + spawn RTP)
+     * until {@code /preciv nobypass} toggles it. Memory-only after start.
+     */
+    public boolean nobypassEnabledAtStart() {
+        return cfg().getBoolean("nobypass.enabled-at-start", true);
+    }
+
+    /** When true, kickoff + join/world-change/post-TP hunt BetterRTP is active. */
     public boolean huntRtpEnabled() {
         return cfg().getBoolean("spawn.hunt-rtp.enabled", true);
     }
 
     /**
-     * BetterRTP destination world name. Empty → use the player's current world at dump time.
+     * BetterRTP destination world name. Empty → RTP in the player's current world (same world).
      */
     public String huntRtpWorld() {
         String v = cfg().getString("spawn.hunt-rtp.world", "");
@@ -422,10 +430,10 @@ public final class PluginConfig {
 
     /**
      * How many leaderboard slots to expose as {@code %topN_name%} / {@code %topN_kills%}
-     * (and dense {@code %topN_place%}). Default 3.
+     * (and dense {@code %topN_place%}). Default 4.
      */
     public int scoreboardTopSlots() {
-        return Math.max(1, Math.min(15, cfg().getInt("tab.scoreboard.top-slots", 3)));
+        return Math.max(1, Math.min(15, cfg().getInt("tab.scoreboard.top-slots", 4)));
     }
 
     /** Placeholder value when a top-N slot has no killer yet. */

@@ -54,8 +54,15 @@ arena:
     yaw: 0.0
     pitch: 0.0
 
-# Safe spawn zone for hunt-phase teleport lock (free TP while standing here).
+# When true, plugin starts with "nobypass" ON: teleport-lock + hunt RTP ignore
+# preciv.teleport.bypass / preciv.spawn.rtp.bypass until /preciv nobypass toggles it.
+# State is in-memory only (not persisted); restart re-reads this flag.
+nobypass:
+  enabled-at-start: true
+
+# Spawn safe zone (TP-lock free zone) + hunt RTP source region.
 # Set with /preciv admin spawnwand (or set spawnpos1|spawnpos2). FFA has no TP lock.
+# Usually the same world as the arena (no separate spawn world required).
 spawn:
   configured: false
   world: world
@@ -67,11 +74,12 @@ spawn:
     x: 0
     y: 64
     z: 0
-  # Hunt kickoff + join: BetterRTP players standing in this cuboid only.
-  # Kickoff is one-shot on COUNTDOWN/grace → HUNT. Join RTP only while live HUNT (not paused, not FFA).
+  # Hunt only (not paused, not FFA): BetterRTP anyone standing in the spawn cuboid
+  # OR the FFA arena cuboid (same world is fine). Kickoff once on enter HUNT;
+  # join / world-change / post-teleport also re-check while live HUNT.
   hunt-rtp:
     enabled: true
-    # BetterRTP destination world; empty = player's current world at dump time
+    # BetterRTP destination world; empty = RTP in the player's current world (same world)
     world: ""
     # Temporary teleport-lock allow window for plugin-initiated RTP (ms)
     bypass-ms: 60000
@@ -135,17 +143,19 @@ tab:
     # Relative lines start at this 0-based index; absolute "line:" keys still override.
     offset: 3
     # How many ranked slots to fill as %top1_name%/%top1_kills% … %topN_*
-    top-slots: 3
+    top-slots: 4
     empty-name: "—"
     empty-kills: "0"
     # Injected rows in order from offset. Placeholders:
     #   %top1_name% %top1_kills% %top1_place% … through top-slots
     #   %top_killer% / %top_kills%  (aliases for #1)
     #   %phase%  %remaining% (until next phase)  %until_end% (until event end)
+    # PlaceholderAPI (soft): %preciv_top_1_name% %preciv_top_1_place% %preciv_top_1_kills% …
     lines:
       - "&c&l#1 &f%top1_name% &8(%top1_kills%)"
       - "&6#2 &f%top2_name% &8(%top2_kills%)"
       - "&e#3 &f%top3_name% &8(%top3_kills%)"
+      - "&7#4 &f%top4_name% &8(%top4_kills%)"
       # %phase% = friendly stage label; %remaining% = time until next stage
       - "&7%phase% &8· next &f%remaining%"
   bossbar:

@@ -15,6 +15,7 @@ import com.fusion.dev.cystol.compass.CompassService;
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
 import com.fusion.dev.cystol.config.yaml.ManagedYamlFiles;
+import com.fusion.dev.cystol.display.PrecivPlaceholderExpansion;
 import com.fusion.dev.cystol.display.TabDisplayService;
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
@@ -25,6 +26,7 @@ import com.fusion.dev.cystol.host.HostGui;
 import com.fusion.dev.cystol.kill.KillService;
 import com.fusion.dev.cystol.kill.PvpManagerKillListener;
 import com.fusion.dev.cystol.teleport.BetterRtpBridge;
+import com.fusion.dev.cystol.teleport.NoBypassService;
 import com.fusion.dev.cystol.teleport.SpawnHuntRtpJoinListener;
 import com.fusion.dev.cystol.teleport.SpawnHuntRtpService;
 import com.fusion.dev.cystol.teleport.TeleportLockListener;
@@ -74,6 +76,8 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
     private Lang lang;
     private PrecivCommand precivCommand;
     private EventCommand eventCommand;
+    private NoBypassService noBypassService;
+    private PrecivPlaceholderExpansion placeholderExpansion;
 
     @Override
     public void onLoad() {
@@ -137,11 +141,12 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
                 this, compassService, compassGui, eventManager, lang, config, effects, tabDisplayService
         );
 
-        TeleportLockService teleportLock = new TeleportLockService(eventManager, config);
+        noBypassService = new NoBypassService(config.nobypassEnabledAtStart());
+        TeleportLockService teleportLock = new TeleportLockService(eventManager, config, noBypassService);
         BetterRtpBridge betterRtpBridge = new BetterRtpBridge(getLogger());
         betterRtpBridge.register(this);
         SpawnHuntRtpService spawnHuntRtpService = new SpawnHuntRtpService(
-                this, eventManager, config, teleportLock, betterRtpBridge, getLogger()
+                this, eventManager, config, teleportLock, betterRtpBridge, noBypassService, getLogger()
         );
 
         eventScheduler = new EventScheduler(
@@ -169,7 +174,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
 
         AdminOps adminOps = new AdminOps(
                 eventManager, eventScheduler, killService, ffaSpawnService,
-                config, lang, effects, vanishService
+                config, lang, effects, vanishService, noBypassService
         );
 
         HostChatSession hostChat = new HostChatSession(this, lang);
@@ -179,8 +184,11 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
 
         eventCommand = new EventCommand(lang);
         precivCommand = new PrecivCommand(
-                eventManager, killService, compassService, config, lang, adminOps, hostGui
+                eventManager, killService, compassService, config, lang, adminOps, hostGui, noBypassService
         );
+
+        placeholderExpansion = new PrecivPlaceholderExpansion(this, killService, config);
+        placeholderExpansion.tryRegister();
 
         eventScheduler.start();
 
@@ -197,11 +205,16 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         }
 
         getLogger().info("Day of Assassins enabled (Paper plugin). Phase=" + eventManager.phase()
-                + " vanish=" + vanishService.backendLabel());
+                + " vanish=" + vanishService.backendLabel()
+                + " nobypass=" + (noBypassService != null && noBypassService.isActive()));
     }
 
     @Override
     public void onDisable() {
+        if (placeholderExpansion != null) {
+            placeholderExpansion.unregister();
+            placeholderExpansion = null;
+        }
         if (eventScheduler != null) {
             eventScheduler.stop();
         }
@@ -229,7 +242,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         addPerm(pm, "preciv.admin", "Admin setup commands", PermissionDefault.OP);
         addPerm(pm, "preciv.ffa.tp.bypass", "Skip FFA mass teleport", PermissionDefault.FALSE);
         addPerm(pm, "preciv.teleport.bypass", "Bypass hunt-phase teleport lock", PermissionDefault.OP);
-        addPerm(pm, "preciv.spawn.rtp.bypass", "Skip hunt spawn-cuboid BetterRTP dump", PermissionDefault.FALSE);
+        addPerm(pm, "preciv.spawn.rtp.bypass", "Skip hunt spawn/arena BetterRTP dump", PermissionDefault.FALSE);
     }
 
     private static void addPerm(PluginManager pm, String name, String desc, PermissionDefault def) {
