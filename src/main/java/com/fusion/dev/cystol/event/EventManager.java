@@ -191,16 +191,19 @@ public final class EventManager {
     }
 
     public void setStart(Instant instant) {
-        Instant prev = this.start;
         this.start = instant;
         config.setTimeStart(instant);
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        // Any start arm is a new pre-hunt segment: re-anchor fill + drop live-enter stamps
+        // so a second event after the first cannot keep draining from old hunt/ffa enters.
         if (instant == null) {
             clearAnchors();
-        } else if (prev == null && countdownAnchor == null) {
+        } else {
             countdownAnchor = Instant.now();
+            huntEntered = null;
+            ffaEntered = null;
         }
         pause(); // schedule edit freezes until host unpauses
     }
