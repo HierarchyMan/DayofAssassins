@@ -270,6 +270,10 @@ public final class EventScheduler {
                 }
             }
         }
+        // Finale open: title for everyone (not only ring-TP targets), then HUD refresh
+        if (to == EventPhase.FFA && from != EventPhase.FFA) {
+            broadcastFfaStart();
+        }
         // Entering live display phases — push bossbar/scoreboard immediately (esp. unpause)
         if (to == EventPhase.COUNTDOWN || to == EventPhase.HUNT || to == EventPhase.FFA) {
             tabDisplayService.forceRefresh(now);
@@ -347,6 +351,21 @@ public final class EventScheduler {
         for (Player p : Bukkit.getOnlinePlayers()) {
             p.showTitle(title);
             effects.play(p, EffectService.EffectKey.HUNT_START);
+        }
+    }
+
+    /**
+     * Finale stage open — all online players (eligible or not). Ring TP only plays teleport FX
+     * so non-teleported players still see “FIGHT / final deathmatch has begun”.
+     */
+    private void broadcastFfaStart() {
+        Title title = Title.title(
+                lang.msg("ffa.start-title"),
+                lang.msg("ffa.start-subtitle"),
+                Title.Times.times(Duration.ofMillis(250), Duration.ofSeconds(3), Duration.ofMillis(500))
+        );
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            p.showTitle(title);
         }
     }
 
@@ -490,23 +509,17 @@ public final class EventScheduler {
                 return "no-spawns";
             }
 
-            Title title = Title.title(
-                    lang.msg("ffa.start-title"),
-                    lang.msg("ffa.start-subtitle"),
-                    Title.Times.times(Duration.ofMillis(250), Duration.ofSeconds(3), Duration.ofMillis(500))
-            );
             cancelFfaBatch();
             // Mark only after preflight success so unloaded world can still be retried next tick
             eventManager.markFfaTeleported();
             marked = true;
+            // Start title was already broadcast on phase enter (or admin forcetp re-path below).
+            // Ring TP only plays teleport FX — avoids double titles for eligible players.
             ffaBatchTask = ffaSpawnService.teleportPlayersBatched(
                     plugin,
                     eligible,
                     FfaSpawnService.DEFAULT_BATCH_SIZE,
-                    p -> {
-                        p.showTitle(title);
-                        effects.play(p, EffectService.EffectKey.FFA_TELEPORT);
-                    },
+                    p -> effects.play(p, EffectService.EffectKey.FFA_TELEPORT),
                     () -> {
                         ffaBatchTask = null;
                         ffaTpInProgress.set(false);

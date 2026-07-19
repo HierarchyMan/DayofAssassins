@@ -4,6 +4,7 @@ import com.fusion.dev.cystol.arena.CuboidBounds;
 import com.fusion.dev.cystol.arena.FfaSpawnService;
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
+import com.fusion.dev.cystol.display.EventDisplayRenderer;
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.event.EventScheduler;
@@ -72,12 +73,8 @@ public final class AdminOps {
         Optional<Instant> ffa = eventManager.ffaMoment();
         String ffaSource = eventManager.ffaOverride().isPresent() ? "override" : "derived";
 
-        long remainingSecs = 0L;
-        if (phase == EventPhase.COUNTDOWN && start.isPresent()) {
-            remainingSecs = Math.max(0L, start.get().getEpochSecond() - now.getEpochSecond());
-        } else if ((phase == EventPhase.HUNT || phase == EventPhase.FFA) && end.isPresent()) {
-            remainingSecs = Math.max(0L, end.get().getEpochSecond() - now.getEpochSecond());
-        }
+        // Stage remaining = until next boundary (Hunt→Finale, Finale→End), not always until end.
+        long remainingSecs = eventManager.timeline().secondsUntilNextPhase(now);
 
         Optional<DenseRanking.Entry> top = killService.topKiller();
         String topName = top.map(e -> e.name() == null ? "?" : e.name()).orElse("—");
@@ -92,7 +89,7 @@ public final class AdminOps {
                 || !"world".equals(config.arenaWorld());
 
         sender.sendMessage(lang.msg("admin.status.header"));
-        sender.sendMessage(lang.msg("admin.status.phase", Map.of("phase", phase.name())));
+        sender.sendMessage(lang.msg("admin.status.phase", Map.of("phase", phaseLabel(phase))));
         sender.sendMessage(lang.msg("admin.status.start", Map.of(
                 "time", start.map(TimeUtil::formatUtc).orElse("—")
         )));
@@ -161,7 +158,7 @@ public final class AdminOps {
         eventManager.applyScheduleAndUnpause(times, now);
         eventScheduler.refreshDisplayNow();
         sender.sendMessage(lang.msg("admin.startnow-ok", Map.of(
-                "phase", eventManager.phase().name(),
+                "phase", phaseLabel(eventManager.phase()),
                 "time", TimeUtil.formatUtc(times.start())
         )));
     }
@@ -177,7 +174,7 @@ public final class AdminOps {
         eventManager.applyScheduleAndUnpause(times, now);
         eventScheduler.refreshDisplayNow();
         sender.sendMessage(lang.msg("admin.ffanow-ok", Map.of(
-                "phase", eventManager.phase().name(),
+                "phase", phaseLabel(eventManager.phase()),
                 "time", TimeUtil.formatUtc(now)
         )));
     }
@@ -188,7 +185,7 @@ public final class AdminOps {
         eventManager.applyScheduleAndUnpause(times, now);
         eventScheduler.refreshDisplayNow();
         sender.sendMessage(lang.msg("admin.endnow-ok", Map.of(
-                "phase", eventManager.phase().name()
+                "phase", phaseLabel(eventManager.phase())
         )));
     }
 
@@ -202,7 +199,7 @@ public final class AdminOps {
         EventPhase p = eventManager.unpause(Instant.now());
         // Bossbar/scoreboard must come back immediately — do not wait for the next 1s tick.
         eventScheduler.refreshDisplayNow();
-        sender.sendMessage(lang.msg("admin.unpaused-ok", Map.of("phase", p.name())));
+        sender.sendMessage(lang.msg("admin.unpaused-ok", Map.of("phase", phaseLabel(p))));
     }
 
     public void forceTp(CommandSender sender) {
@@ -288,11 +285,11 @@ public final class AdminOps {
         switch (target) {
             case IDLE -> {
                 eventManager.clearSchedule();
-                sender.sendMessage(lang.msg("admin.phase-ok", Map.of("phase", "IDLE")));
+                sender.sendMessage(lang.msg("admin.phase-ok", Map.of("phase", phaseLabel(EventPhase.IDLE))));
             }
             case PAUSED -> {
                 eventManager.pause();
-                sender.sendMessage(lang.msg("admin.phase-ok", Map.of("phase", "PAUSED")));
+                sender.sendMessage(lang.msg("admin.phase-ok", Map.of("phase", phaseLabel(EventPhase.PAUSED))));
             }
             case COUNTDOWN -> {
                 ScheduleJumps.Times times = ScheduleJumps.countdown(
@@ -303,7 +300,7 @@ public final class AdminOps {
                 );
                 eventManager.applyScheduleAndUnpause(times, now);
                 sender.sendMessage(lang.msg("admin.phase-ok", Map.of(
-                        "phase", eventManager.phase().name()
+                        "phase", phaseLabel(eventManager.phase())
                 )));
             }
             case HUNT -> {
@@ -312,7 +309,7 @@ public final class AdminOps {
                 );
                 eventManager.applyScheduleAndUnpause(times, now);
                 sender.sendMessage(lang.msg("admin.phase-ok", Map.of(
-                        "phase", eventManager.phase().name()
+                        "phase", phaseLabel(eventManager.phase())
                 )));
             }
             case FFA -> ffaNow(sender);
@@ -325,5 +322,22 @@ public final class AdminOps {
                 "/preciv admin <status|startnow|ffanow|endnow|pause|unpause|forcetp|forcespawnrtp|forceceremony|resetflags|"
                         + "eligible|clearkills|reload|phase|wand|spawnwand|set …>"
         ));
+    }
+
+    /** Staff stage label from lang + enum when friendly differs (e.g. Finale (FFA)). */
+    private String phaseLabel(EventPhase phase) {
+        return EventDisplayRenderer.opsPhaseLabel(phase, loadPhaseLabels());
+    }
+
+    private EventDisplayRenderer.PhaseLabels loadPhaseLabels() {
+        return new EventDisplayRenderer.PhaseLabels(
+                lang.raw("phase.idle", "Idle"),
+                lang.raw("phase.paused", "Paused"),
+                lang.raw("phase.countdown", "Starting soon"),
+                lang.raw("phase.grace", "Grace"),
+                lang.raw("phase.hunt", "Hunt"),
+                lang.raw("phase.ffa", "Finale"),
+                lang.raw("phase.ended", "Ended")
+        );
     }
 }

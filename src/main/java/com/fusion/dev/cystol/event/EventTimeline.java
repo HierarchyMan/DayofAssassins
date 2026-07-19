@@ -163,7 +163,7 @@ public final class EventTimeline {
 
     /**
      * Fill progress for the <em>current</em> phase segment (0 at segment start → 1 at next boundary).
-     * COUNTDOWN uses the announce-lead window; HUNT fills start→FFA; FFA fills FFA→end.
+     * Legacy announce-lead countdown; prefer {@link #bossBarProgress} with stored anchors.
      */
     public double phaseFillProgress(Instant now, long announceLeadSeconds) {
         Objects.requireNonNull(now, "now");
@@ -178,16 +178,63 @@ public final class EventTimeline {
                 if (boundary == null) {
                     yield 0.0;
                 }
-                yield segmentFill(now, start, boundary);
+                yield segmentDrain(now, start, boundary);
             }
             case FFA -> {
                 Instant from = ffaMoment().orElse(start);
                 if (from == null || end == null) {
                     yield 0.0;
                 }
-                yield segmentFill(now, from, end);
+                yield segmentDrain(now, from, end);
             }
             case ENDED -> 1.0;
+            case IDLE, PAUSED -> 0.0;
+        };
+    }
+
+    /**
+     * Bossbar progress from stored segment anchors.
+     * <ul>
+     *   <li>COUNTDOWN: fill 0→1 from {@code countdownAnchor} → start</li>
+     *   <li>HUNT: drain 1→0 from {@code huntEntered} → FFA moment</li>
+     *   <li>FFA: drain 1→0 from {@code ffaEntered} → end</li>
+     * </ul>
+     * Missing anchors fall back to schedule bounds ({@code start} / FFA / end).
+     */
+    public double bossBarProgress(
+            Instant now,
+            Instant countdownAnchor,
+            Instant huntEntered,
+            Instant ffaEntered
+    ) {
+        Objects.requireNonNull(now, "now");
+        EventPhase phase = phaseAt(now);
+        return switch (phase) {
+            case COUNTDOWN -> {
+                if (start == null) {
+                    yield 0.0;
+                }
+                Instant from = countdownAnchor != null ? countdownAnchor : now;
+                yield segmentFill(now, from, start);
+            }
+            case HUNT -> {
+                Instant boundary = ffaMoment().orElse(end);
+                if (boundary == null) {
+                    yield 0.0;
+                }
+                Instant from = huntEntered != null ? huntEntered : (start != null ? start : now);
+                yield segmentDrain(now, from, boundary);
+            }
+            case FFA -> {
+                if (end == null) {
+                    yield 0.0;
+                }
+                Instant from = ffaEntered != null
+                        ? ffaEntered
+                        : ffaMoment().orElse(start != null ? start : now);
+                yield segmentDrain(now, from, end);
+            }
+            case ENDED -> 0.0;
             case IDLE, PAUSED -> 0.0;
         };
     }
@@ -230,6 +277,9 @@ public final class EventTimeline {
     }
 
     private static double segmentFill(Instant now, Instant from, Instant to) {
+        if (from == null || to == null) {
+            return 0.0;
+        }
         if (now.isBefore(from)) {
             return 0.0;
         }
@@ -242,6 +292,25 @@ public final class EventTimeline {
         }
         long elapsed = now.getEpochSecond() - from.getEpochSecond();
         return clamp01((double) elapsed / (double) total);
+    }
+
+    /** 1 at segment open → 0 at boundary (time remaining / total). */
+    private static double segmentDrain(Instant now, Instant from, Instant to) {
+        if (from == null || to == null) {
+            return 0.0;
+        }
+        if (now.isBefore(from)) {
+            return 1.0;
+        }
+        if (!now.isBefore(to)) {
+            return 0.0;
+        }
+        long total = to.getEpochSecond() - from.getEpochSecond();
+        if (total <= 0) {
+            return 0.0;
+        }
+        long remaining = to.getEpochSecond() - now.getEpochSecond();
+        return clamp01((double) remaining / (double) total);
     }
 
     private static double clamp01(double v) {

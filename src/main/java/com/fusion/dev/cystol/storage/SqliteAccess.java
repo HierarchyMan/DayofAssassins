@@ -50,7 +50,10 @@ public final class SqliteAccess {
                       ffa_teleported INTEGER NOT NULL DEFAULT 0,
                       ceremony_done INTEGER NOT NULL DEFAULT 0,
                       paused INTEGER NOT NULL DEFAULT 0,
-                      spawn_rtp_done INTEGER NOT NULL DEFAULT 0
+                      spawn_rtp_done INTEGER NOT NULL DEFAULT 0,
+                      countdown_anchor_epoch INTEGER,
+                      hunt_entered_epoch INTEGER,
+                      ffa_entered_epoch INTEGER
                     )
                     """);
             // Upgrade older DBs that lack paused
@@ -61,6 +64,22 @@ public final class SqliteAccess {
             }
             try {
                 st.executeUpdate("ALTER TABLE event_state ADD COLUMN spawn_rtp_done INTEGER NOT NULL DEFAULT 0");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            // Bossbar segment anchors (wall clock when segment armed / entered)
+            try {
+                st.executeUpdate("ALTER TABLE event_state ADD COLUMN countdown_anchor_epoch INTEGER");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            try {
+                st.executeUpdate("ALTER TABLE event_state ADD COLUMN hunt_entered_epoch INTEGER");
+            } catch (SQLException ignored) {
+                // column already exists
+            }
+            try {
+                st.executeUpdate("ALTER TABLE event_state ADD COLUMN ffa_entered_epoch INTEGER");
             } catch (SQLException ignored) {
                 // column already exists
             }

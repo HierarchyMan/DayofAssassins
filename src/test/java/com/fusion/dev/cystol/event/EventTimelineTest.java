@@ -108,13 +108,32 @@ class EventTimelineTest {
     }
 
     @Test
-    void phaseFillProgressTracksCurrentSegment() {
+    void phaseFillProgressDrainsHuntAndFfa() {
         Instant start = Instant.parse("2026-01-01T12:00:00Z");
         Instant end = Instant.parse("2026-01-01T14:00:00Z");
         EventTimeline t = new EventTimeline(start, end, null, 1800);
-        // HUNT half-way start→FFA (12:00→13:30) at 12:45
+        // HUNT half-way start→FFA (12:00→13:30) at 12:45 → drain 0.5
         assertEquals(0.5, t.phaseFillProgress(Instant.parse("2026-01-01T12:45:00Z"), 3600), 1e-9);
-        // FFA half-way 13:30→14:00 at 13:45
+        // FFA half-way 13:30→14:00 at 13:45 → drain 0.5
         assertEquals(0.5, t.phaseFillProgress(Instant.parse("2026-01-01T13:45:00Z"), 3600), 1e-9);
+    }
+
+    @Test
+    void bossBarProgressFillCountdownDrainLive() {
+        Instant start = Instant.parse("2026-01-01T12:00:00Z");
+        Instant end = Instant.parse("2026-01-01T14:00:00Z");
+        EventTimeline t = new EventTimeline(start, end, null, 1800);
+        Instant anchor = Instant.parse("2026-01-01T10:00:00Z"); // 2h before start
+        Instant midCd = Instant.parse("2026-01-01T11:00:00Z");
+        assertEquals(0.5, t.bossBarProgress(midCd, anchor, null, null), 1e-9);
+
+        Instant huntEnter = start;
+        Instant midHunt = Instant.parse("2026-01-01T12:45:00Z"); // half of 90m to FFA
+        assertEquals(0.5, t.bossBarProgress(midHunt, anchor, huntEnter, null), 1e-9);
+
+        Instant ffaEnter = Instant.parse("2026-01-01T13:30:00Z");
+        Instant midFfa = Instant.parse("2026-01-01T13:45:00Z");
+        assertEquals(0.5, t.bossBarProgress(midFfa, anchor, huntEnter, ffaEnter), 1e-9);
+        assertEquals(0.0, t.bossBarProgress(end, anchor, huntEnter, ffaEnter), 1e-9);
     }
 }

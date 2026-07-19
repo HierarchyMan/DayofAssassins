@@ -2,6 +2,7 @@ package com.fusion.dev.cystol.host;
 
 import com.fusion.dev.cystol.config.Lang;
 import com.fusion.dev.cystol.config.PluginConfig;
+import com.fusion.dev.cystol.display.EventDisplayRenderer;
 import com.fusion.dev.cystol.event.EventManager;
 import com.fusion.dev.cystol.event.EventPhase;
 import com.fusion.dev.cystol.event.EventScheduler;
@@ -74,7 +75,7 @@ public final class HostGui {
                         paused
                                 ? "&7Schedule is frozen. Unpause to enter the live stage."
                                 : "&7Event is live. Pause freezes progression.",
-                        "&8Would-be stage: &f" + eventManager.livePhaseAt(Instant.now()).name(),
+                        "&8Would-be stage: &f" + phaseLabel(eventManager.livePhaseAt(Instant.now())),
                         "",
                         "&eClick &7to toggle"
                 ),
@@ -84,7 +85,7 @@ public final class HostGui {
                         if (eventScheduler != null) {
                             eventScheduler.refreshDisplayNow();
                         }
-                        player.sendMessage(lang.msg("admin.unpaused-ok", Map.of("phase", p.name())));
+                        player.sendMessage(lang.msg("admin.unpaused-ok", Map.of("phase", phaseLabel(p))));
                     } else {
                         eventManager.pause();
                         if (eventScheduler != null) {
@@ -511,7 +512,7 @@ public final class HostGui {
     private GuiItem statusItem() {
         EventPhase phase = eventManager.phase();
         List<String> lore = new ArrayList<>();
-        lore.add("&8Stage: &f" + phase.name());
+        lore.add("&8Stage: &f" + phaseLabel(phase));
         lore.add("&8Start: &f" + eventManager.start().map(TimeUtil::formatUtc).orElse("—"));
         lore.add("&8Finale: &f" + eventManager.ffaMoment().map(TimeUtil::formatUtc).orElse("—")
                 + (eventManager.ffaOverride().isPresent() ? " &8(override)" : " &8(derived)"));
@@ -520,6 +521,19 @@ public final class HostGui {
         lore.add("&7Open a section below to edit.");
         return navItem(Material.BOOK, lang.raw("host.gui.main.status.name"), lore, e -> {
         });
+    }
+
+    /** Friendly stage label from lang; appends enum when it differs (e.g. Finale (FFA)). */
+    private String phaseLabel(EventPhase phase) {
+        return EventDisplayRenderer.opsPhaseLabel(phase, new EventDisplayRenderer.PhaseLabels(
+                lang.raw("phase.idle", "Idle"),
+                lang.raw("phase.paused", "Paused"),
+                lang.raw("phase.countdown", "Starting soon"),
+                lang.raw("phase.grace", "Grace"),
+                lang.raw("phase.hunt", "Hunt"),
+                lang.raw("phase.ffa", "Finale"),
+                lang.raw("phase.ended", "Ended")
+        ));
     }
 
     private GuiItem timeItem(Material mat, String name, TimeField field, Instant value, Player player) {

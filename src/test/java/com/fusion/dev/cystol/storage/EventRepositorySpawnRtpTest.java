@@ -31,12 +31,22 @@ class EventRepositorySpawnRtpTest {
         try (Connection c = SqliteAccess.openAndMigrate(db);
              Statement st = c.createStatement();
              ResultSet rs = st.executeQuery(
-                     "SELECT spawn_rtp_done, ffa_teleported, ceremony_done, paused FROM event_state WHERE id = 1")) {
+                     """
+                             SELECT spawn_rtp_done, ffa_teleported, ceremony_done, paused,
+                                    countdown_anchor_epoch, hunt_entered_epoch, ffa_entered_epoch
+                             FROM event_state WHERE id = 1
+                             """)) {
             assertTrue(rs.next());
             assertEquals(0, rs.getInt("spawn_rtp_done"));
             assertEquals(0, rs.getInt("ffa_teleported"));
             assertEquals(0, rs.getInt("ceremony_done"));
             assertEquals(0, rs.getInt("paused"));
+            rs.getObject("countdown_anchor_epoch");
+            assertTrue(rs.wasNull());
+            rs.getObject("hunt_entered_epoch");
+            assertTrue(rs.wasNull());
+            rs.getObject("ffa_entered_epoch");
+            assertTrue(rs.wasNull());
         }
     }
 
@@ -64,10 +74,15 @@ class EventRepositorySpawnRtpTest {
 
         try (Connection c = SqliteAccess.openAndMigrate(db);
              Statement st = c.createStatement();
-             ResultSet rs = st.executeQuery("SELECT spawn_rtp_done, phase FROM event_state WHERE id = 1")) {
+             ResultSet rs = st.executeQuery(
+                     "SELECT spawn_rtp_done, phase, countdown_anchor_epoch, hunt_entered_epoch, ffa_entered_epoch FROM event_state WHERE id = 1")) {
             assertTrue(rs.next());
             assertEquals(0, rs.getInt("spawn_rtp_done"));
             assertEquals("HUNT", rs.getString("phase"));
+            rs.getObject("countdown_anchor_epoch");
+            assertTrue(rs.wasNull());
+            rs.getObject("hunt_entered_epoch");
+            assertTrue(rs.wasNull());
         }
     }
 
@@ -81,6 +96,8 @@ class EventRepositorySpawnRtpTest {
             Instant start = Instant.parse("2026-07-18T12:00:00Z");
             Instant end = Instant.parse("2026-07-18T18:00:00Z");
 
+            Instant anchor = Instant.parse("2026-07-18T10:00:00Z");
+            Instant huntEnter = start;
             try (PreparedStatement ps = c.prepareStatement("""
                     UPDATE event_state SET
                       start_epoch = ?,
@@ -90,7 +107,10 @@ class EventRepositorySpawnRtpTest {
                       ffa_teleported = ?,
                       ceremony_done = ?,
                       paused = ?,
-                      spawn_rtp_done = ?
+                      spawn_rtp_done = ?,
+                      countdown_anchor_epoch = ?,
+                      hunt_entered_epoch = ?,
+                      ffa_entered_epoch = ?
                     WHERE id = 1
                     """)) {
                 ps.setLong(1, start.getEpochSecond());
@@ -101,11 +121,18 @@ class EventRepositorySpawnRtpTest {
                 ps.setInt(6, 0);
                 ps.setInt(7, 0);
                 ps.setInt(8, 1);
+                ps.setLong(9, anchor.getEpochSecond());
+                ps.setLong(10, huntEnter.getEpochSecond());
+                ps.setObject(11, null);
                 assertEquals(1, ps.executeUpdate());
             }
 
             try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT start_epoch, end_epoch, phase, ffa_teleported, ceremony_done, paused, spawn_rtp_done FROM event_state WHERE id = 1");
+                    """
+                            SELECT start_epoch, end_epoch, phase, ffa_teleported, ceremony_done, paused, spawn_rtp_done,
+                                   countdown_anchor_epoch, hunt_entered_epoch, ffa_entered_epoch
+                            FROM event_state WHERE id = 1
+                            """);
                  ResultSet rs = ps.executeQuery()) {
                 assertTrue(rs.next());
                 assertEquals(start.getEpochSecond(), rs.getLong("start_epoch"));
@@ -115,6 +142,10 @@ class EventRepositorySpawnRtpTest {
                 assertEquals(0, rs.getInt("ceremony_done"));
                 assertEquals(0, rs.getInt("paused"));
                 assertEquals(1, rs.getInt("spawn_rtp_done"));
+                assertEquals(anchor.getEpochSecond(), rs.getLong("countdown_anchor_epoch"));
+                assertEquals(huntEnter.getEpochSecond(), rs.getLong("hunt_entered_epoch"));
+                rs.getObject("ffa_entered_epoch");
+                assertTrue(rs.wasNull());
             }
 
             // Clear spawn_rtp_done, set ffa_teleported — independent flags
@@ -146,13 +177,17 @@ class EventRepositorySpawnRtpTest {
 
     @Test
     void storedEventRecordCarriesSpawnRtpDone() {
+        Instant a = Instant.parse("2026-01-01T00:00:00Z");
+        Instant h = Instant.parse("2026-01-01T01:00:00Z");
         EventRepository.StoredEvent done = new EventRepository.StoredEvent(
-                null, null, null, EventPhase.HUNT, false, false, false, true);
+                null, null, null, EventPhase.HUNT, false, false, false, true, a, h, null);
         assertTrue(done.spawnRtpDone());
         assertFalse(done.ffaTeleported());
+        assertEquals(a, done.countdownAnchor());
+        assertEquals(h, done.huntEntered());
 
         EventRepository.StoredEvent clear = new EventRepository.StoredEvent(
-                null, null, null, EventPhase.IDLE, true, true, true, false);
+                null, null, null, EventPhase.IDLE, true, true, true, false, null, null, null);
         assertFalse(clear.spawnRtpDone());
         assertTrue(clear.ffaTeleported());
         assertTrue(clear.ceremonyDone());

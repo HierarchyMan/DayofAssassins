@@ -14,6 +14,13 @@ import java.util.logging.Logger;
 /**
  * In-memory event times + phase with SQLite flush.
  * Schedule edits set {@link #paused()} so the clock does not advance side effects until {@link #unpause()}.
+ *
+ * <p>Bossbar segment anchors (persisted):
+ * <ul>
+ *   <li>{@code countdownAnchor} — wall clock when start was first armed</li>
+ *   <li>{@code huntEntered} — wall clock when live phase first became HUNT</li>
+ *   <li>{@code ffaEntered} — wall clock when live phase first became FFA</li>
+ * </ul>
  */
 public final class EventManager {
 
@@ -31,6 +38,13 @@ public final class EventManager {
     /** One-shot: hunt-kickoff spawn-cuboid BetterRTP mass dump completed for this schedule. */
     private final AtomicBoolean spawnRtpDone = new AtomicBoolean(false);
 
+    /** Wall clock when start was first set for this schedule arm. */
+    private volatile Instant countdownAnchor;
+    /** Wall clock when live phase first entered HUNT this arm. */
+    private volatile Instant huntEntered;
+    /** Wall clock when live phase first entered FFA this arm. */
+    private volatile Instant ffaEntered;
+
     public EventManager(PluginConfig config, EventRepository repository, Logger logger) {
         this.config = config;
         this.repository = repository;
@@ -38,6 +52,7 @@ public final class EventManager {
     }
 
     public void loadFromStorageAndConfig() {
+        Instant now = Instant.now();
         try {
             EventRepository.StoredEvent stored = repository.load();
             this.start = firstNonNull(stored.start(), config.configuredStart().orElse(null));
@@ -47,14 +62,19 @@ public final class EventManager {
             this.ceremonyDone.set(stored.ceremonyDone());
             this.paused.set(stored.paused());
             this.spawnRtpDone.set(stored.spawnRtpDone());
-            refreshPhase(Instant.now());
+            this.countdownAnchor = stored.countdownAnchor();
+            this.huntEntered = stored.huntEntered();
+            this.ffaEntered = stored.ffaEntered();
+            refreshPhase(now);
+            recoverAnchors(now);
             persist();
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to load event state", e);
             this.start = config.configuredStart().orElse(null);
             this.end = config.configuredEnd().orElse(null);
             this.ffaOverride = config.configuredFfaOverride().orElse(null);
-            refreshPhase(Instant.now());
+            refreshPhase(now);
+            recoverAnchors(now);
         }
     }
 
@@ -74,6 +94,26 @@ public final class EventManager {
         return paused.get();
     }
 
+    public Optional<Instant> countdownAnchor() {
+        return Optional.ofNullable(countdownAnchor);
+    }
+
+    public Optional<Instant> huntEntered() {
+        return Optional.ofNullable(huntEntered);
+    }
+
+    public Optional<Instant> ffaEntered() {
+        return Optional.ofNullable(ffaEntered);
+    }
+
+    /**
+     * Bossbar 0–1 progress for the live timeline phase (ignores PAUSED display).
+     */
+    public double bossBarProgress(Instant now) {
+        Instant t = now == null ? Instant.now() : now;
+        return timeline().bossBarProgress(t, countdownAnchor, huntEntered, ffaEntered);
+    }
+
     /**
      * Clock-derived phase ignoring pause (what would run if unpaused now).
      */
@@ -83,13 +123,16 @@ public final class EventManager {
 
     /**
      * While paused, always {@link EventPhase#PAUSED}. Otherwise timeline phase.
+     * Stamps hunt/ffa enter anchors once when live phase first hits those stages.
      */
     public EventPhase refreshPhase(Instant now) {
+        Instant t = Objects.requireNonNull(now, "now");
         if (paused.get()) {
             this.phase = EventPhase.PAUSED;
             return this.phase;
         }
-        EventPhase next = timeline().phaseAt(now);
+        EventPhase next = timeline().phaseAt(t);
+        stampEnterIfNeeded(next, t);
         this.phase = next;
         return next;
     }
@@ -113,8 +156,10 @@ public final class EventManager {
      * @return phase after unpause
      */
     public EventPhase unpause(Instant now) {
+        Instant t = Objects.requireNonNull(now, "now");
         paused.set(false);
-        EventPhase next = timeline().phaseAt(Objects.requireNonNull(now, "now"));
+        EventPhase next = timeline().phaseAt(t);
+        stampEnterIfNeeded(next, t);
         this.phase = next;
         persist();
         return next;
@@ -146,11 +191,17 @@ public final class EventManager {
     }
 
     public void setStart(Instant instant) {
+        Instant prev = this.start;
         this.start = instant;
         config.setTimeStart(instant);
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        if (instant == null) {
+            clearAnchors();
+        } else if (prev == null && countdownAnchor == null) {
+            countdownAnchor = Instant.now();
+        }
         pause(); // schedule edit freezes until host unpauses
     }
 
@@ -185,6 +236,9 @@ public final class EventManager {
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        rearmCountdownAnchor(times.start());
+        huntEntered = null;
+        ffaEntered = null;
         pause();
     }
 
@@ -193,6 +247,7 @@ public final class EventManager {
      */
     public EventPhase applyScheduleAndUnpause(ScheduleJumps.Times times, Instant now) {
         Objects.requireNonNull(times, "times");
+        Instant t = Objects.requireNonNull(now, "now");
         this.start = times.start();
         this.end = times.end();
         this.ffaOverride = times.ffaOverride();
@@ -202,7 +257,10 @@ public final class EventManager {
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
-        return unpause(now);
+        rearmCountdownAnchor(times.start());
+        huntEntered = null;
+        ffaEntered = null;
+        return unpause(t);
     }
 
     public boolean isFfaTeleported() {
@@ -275,6 +333,7 @@ public final class EventManager {
         ceremonyDone.set(false);
         ffaTeleported.set(false);
         spawnRtpDone.set(false);
+        clearAnchors();
         pause();
     }
 
@@ -287,10 +346,7 @@ public final class EventManager {
 
     public void persist() {
         try {
-            repository.save(new EventRepository.StoredEvent(
-                    start, end, ffaOverride, phase,
-                    ffaTeleported.get(), ceremonyDone.get(), paused.get(), spawnRtpDone.get()
-            ));
+            repository.save(snapshot());
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to persist event state", e);
         }
@@ -301,10 +357,64 @@ public final class EventManager {
         try {
             repository.save(new EventRepository.StoredEvent(
                     start, end, ffaOverride, p,
-                    ffaTeleported.get(), ceremonyDone.get(), paused.get(), spawnRtpDone.get()
+                    ffaTeleported.get(), ceremonyDone.get(), paused.get(), spawnRtpDone.get(),
+                    countdownAnchor, huntEntered, ffaEntered
             ));
         } catch (SQLException e) {
             logger.log(Level.SEVERE, "Failed to persist phase", e);
+        }
+    }
+
+    private EventRepository.StoredEvent snapshot() {
+        return new EventRepository.StoredEvent(
+                start, end, ffaOverride, phase,
+                ffaTeleported.get(), ceremonyDone.get(), paused.get(), spawnRtpDone.get(),
+                countdownAnchor, huntEntered, ffaEntered
+        );
+    }
+
+    private void rearmCountdownAnchor(Instant startTime) {
+        if (startTime != null) {
+            countdownAnchor = Instant.now();
+        } else {
+            countdownAnchor = null;
+        }
+    }
+
+    private void clearAnchors() {
+        countdownAnchor = null;
+        huntEntered = null;
+        ffaEntered = null;
+    }
+
+    /**
+     * Stamp enter once per schedule arm. Safe under pause/unpause (only if null).
+     */
+    private void stampEnterIfNeeded(EventPhase live, Instant now) {
+        if (live == EventPhase.HUNT && huntEntered == null) {
+            huntEntered = now;
+        } else if (live == EventPhase.FFA && ffaEntered == null) {
+            ffaEntered = now;
+        }
+    }
+
+    /**
+     * Mid-event restart / legacy DB: backfill missing anchors so the bar has a segment.
+     */
+    private void recoverAnchors(Instant now) {
+        EventPhase live = timeline().phaseAt(now);
+        if (live == EventPhase.COUNTDOWN && start != null && countdownAnchor == null) {
+            countdownAnchor = now;
+        }
+        if (live == EventPhase.HUNT && huntEntered == null) {
+            huntEntered = start != null ? start : now;
+        }
+        if (live == EventPhase.FFA && ffaEntered == null) {
+            ffaEntered = timeline().ffaMoment().orElse(start != null ? start : now);
+        }
+        // Also stamp if currently live and null (covers load while unpaused mid-phase)
+        if (!paused.get()) {
+            stampEnterIfNeeded(live, now);
         }
     }
 }

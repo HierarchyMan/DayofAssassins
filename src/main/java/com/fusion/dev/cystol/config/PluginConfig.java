@@ -640,8 +640,8 @@ public final class PluginConfig {
     }
 
     /**
-     * Lowercase command labels blocked during hunt when outside spawn/arena
-     * (e.g. {@code spawn}, {@code home}). Plugin prefixes are stripped at match time.
+     * Lowercase command labels blocked during hunt (e.g. {@code spawn}, {@code home}, {@code hub}).
+     * Plugin prefixes are stripped at match time ({@code essentials:spawn} → {@code spawn}).
      */
     public java.util.Set<String> teleportLockCommands() {
         java.util.List<String> raw = cfg().getStringList("teleport-lock.commands");
@@ -662,9 +662,13 @@ public final class PluginConfig {
     }
 
     private static final String[] DEFAULT_TP_LOCK_COMMANDS = {
-            "spawn", "home", "homes", "back", "rtp", "wild", "tpa", "tpahere",
-            "tpaccept", "tpyes", "tpdeny", "tno", "warp", "warps", "top",
-            "tp", "tpo", "tphere", "call", "bring", "etp", "espawn", "ehome", "eback"
+            "spawn", "espawn", "spawnworld", "hub", "lobby", "leave",
+            "home", "homes", "ehome", "sethome", "delhome",
+            "back", "eback", "rtp", "wild",
+            "tpa", "tpahere", "tpaccept", "tpyes", "tpdeny", "tno",
+            "warp", "warps", "top",
+            "tp", "tpo", "tphere", "call", "bring", "etp",
+            "mv", "mvtp", "mvp", "world", "worlds", "server"
     };
 
     public String spawnWorld() {

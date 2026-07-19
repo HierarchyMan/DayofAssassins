@@ -18,7 +18,10 @@ public final class EventRepository {
             boolean ffaTeleported,
             boolean ceremonyDone,
             boolean paused,
-            boolean spawnRtpDone
+            boolean spawnRtpDone,
+            Instant countdownAnchor,
+            Instant huntEntered,
+            Instant ffaEntered
     ) {
     }
 
@@ -31,12 +34,20 @@ public final class EventRepository {
     public StoredEvent load() throws SQLException {
         return db.withConnection(c -> {
             try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT start_epoch, end_epoch, ffa_override_epoch, phase, ffa_teleported, ceremony_done, paused, spawn_rtp_done FROM event_state WHERE id = 1")) {
+                    """
+                            SELECT start_epoch, end_epoch, ffa_override_epoch, phase,
+                                   ffa_teleported, ceremony_done, paused, spawn_rtp_done,
+                                   countdown_anchor_epoch, hunt_entered_epoch, ffa_entered_epoch
+                            FROM event_state WHERE id = 1
+                            """)) {
                 try (ResultSet rs = ps.executeQuery()) {
                     if (!rs.next()) {
-                        return new StoredEvent(null, null, null, EventPhase.IDLE, false, false, false, false);
+                        return new StoredEvent(
+                                null, null, null, EventPhase.IDLE,
+                                false, false, false, false,
+                                null, null, null
+                        );
                     }
-                    // paused / spawn_rtp_done columns migrated in SqliteAccess.openAndMigrate
                     return new StoredEvent(
                             epoch(rs.getObject("start_epoch")),
                             epoch(rs.getObject("end_epoch")),
@@ -45,7 +56,10 @@ public final class EventRepository {
                             rs.getInt("ffa_teleported") == 1,
                             rs.getInt("ceremony_done") == 1,
                             rs.getInt("paused") == 1,
-                            rs.getInt("spawn_rtp_done") == 1
+                            rs.getInt("spawn_rtp_done") == 1,
+                            epoch(rs.getObject("countdown_anchor_epoch")),
+                            epoch(rs.getObject("hunt_entered_epoch")),
+                            epoch(rs.getObject("ffa_entered_epoch"))
                     );
                 }
             }
@@ -63,7 +77,10 @@ public final class EventRepository {
                       ffa_teleported = ?,
                       ceremony_done = ?,
                       paused = ?,
-                      spawn_rtp_done = ?
+                      spawn_rtp_done = ?,
+                      countdown_anchor_epoch = ?,
+                      hunt_entered_epoch = ?,
+                      ffa_entered_epoch = ?
                     WHERE id = 1
                     """)) {
                 setEpoch(ps, 1, state.start());
@@ -74,6 +91,9 @@ public final class EventRepository {
                 ps.setInt(6, state.ceremonyDone() ? 1 : 0);
                 ps.setInt(7, state.paused() ? 1 : 0);
                 ps.setInt(8, state.spawnRtpDone() ? 1 : 0);
+                setEpoch(ps, 9, state.countdownAnchor());
+                setEpoch(ps, 10, state.huntEntered());
+                setEpoch(ps, 11, state.ffaEntered());
                 ps.executeUpdate();
             }
         });
@@ -84,11 +104,7 @@ public final class EventRepository {
             return null;
         }
         if (o instanceof Number n) {
-            long v = n.longValue();
-            if (v == 0 && !(o instanceof Long)) {
-                // still valid epoch
-            }
-            return Instant.ofEpochSecond(v);
+            return Instant.ofEpochSecond(n.longValue());
         }
         return null;
     }

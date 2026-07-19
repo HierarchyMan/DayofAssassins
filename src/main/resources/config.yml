@@ -84,14 +84,26 @@ spawn:
     # Temporary teleport-lock allow window for plugin-initiated RTP (ms)
     bypass-ms: 60000
 
-# Hunt only: block warps/homes/etc when outside spawn + arena. FFA = unlocked (kills zone-gated).
+# Hunt only: block TP commands, plugin teleports, and world-changes.
+# Cross-world moves (e.g. /spawn hub) always blocked. World change is not cancellable —
+# illegal ones are snapped back to last safe location. FFA = unlocked.
+# Free cuboid only allows same-world hops that stay inside spawn/arena (not /spawn out).
 teleport-lock:
   enabled: true
   commands:
     - spawn
+    - espawn
+    - spawnworld
+    - hub
+    - lobby
+    - leave
     - home
     - homes
+    - ehome
+    - sethome
+    - delhome
     - back
+    - eback
     - rtp
     - wild
     - tpa
@@ -108,9 +120,14 @@ teleport-lock:
     - tphere
     - call
     - bring
-    - espawn
-    - ehome
-    - eback
+    - etp
+    - mv
+    - mvtp
+    - mvp
+    - world
+    - worlds
+    - server
+
 
 storage:
   file: data.db
@@ -156,8 +173,9 @@ tab:
       - "&6#2 &f%top2_name% &8(%top2_kills%)"
       - "&e#3 &f%top3_name% &8(%top3_kills%)"
       - "&7#4 &f%top4_name% &8(%top4_kills%)"
-      # %phase% = friendly stage label; %remaining% = time until next stage
-      - "&7%phase% &8· next &f%remaining%"
+      # %phase% = current stage; %timer_label% names the destination; %remaining% = until that boundary
+      # e.g. "Hunt · Finale in 25m" or "Finale · Ends in 15m" — never "Hunt · next …"
+      - "&7%phase% &8· &7%timer_label% &f%remaining%"
   bossbar:
     # This plugin's event bar. Prefers TAB BossBarManager when TAB bossbar.enabled is true;
     # otherwise uses Paper/Bukkit BossBar (no need to enable TAB's own bossbar feature).

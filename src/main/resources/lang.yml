@@ -10,8 +10,8 @@ messages:
   nobypass-usage: "&cUsage: /preciv nobypass"
 
 teleport:
-  # Hunt phase only — blocked warps/homes while outside spawn/arena
-  locked: "&cTeleporting is disabled during the hunt. Stay in spawn or the arena, or fight in the open."
+  # Hunt phase only — blocked warps/homes/spawn and illegal world-changes
+  locked: "&cTeleporting is disabled during the hunt. Fight in the open — no /spawn, warps, or hub."
 
 event:
   description:
@@ -30,6 +30,14 @@ phase:
   ffa: "Finale"
   ended: "Ended"
 
+# HUD timer prefixes — name the *destination*, never the current stage.
+# Pair with %remaining% (e.g. "Finale in" + "25m"). Avoid bare "next".
+timer:
+  starts-in: "Starts in"
+  hunt-opens-in: "Hunt opens in"
+  finale-in: "Finale in"
+  ends-in: "Ends in"
+
 grace:
   # Cosmetic only — last N minutes of countdown (config grace.seconds)
   start-title: "&a&lGRACE PERIOD"
@@ -41,13 +49,23 @@ hunt:
   join-message: "&c&lDay of Assassins &7is live! Use your &fAssassin's Compass &7to hunt."
 
 bossbar:
-  # %countdown% / %remaining% = time until the next stage (start / finale / end)
-  # %until_end% = time until the event fully ends (optional)
+  # Placeholders:
+  #   %countdown% / %remaining% = until next stage boundary
+  #   %until_end% = until event end
+  #   %timer_label% = destination prefix from timer.* (single source of truth)
+  #   %top_killer% / %top_kills% = leaderboard #1
   countdown-title: "&cDay of Assassins &7starts in &f%countdown%"
-  # Cosmetic grace window (same %countdown% = time until hunt opens)
-  grace-title: "&aGrace &7| hunt opens in &f%countdown%"
-  title: "&cDay of Assassins &7| &f%top_killer% &8(%top_kills% kills) &7| next &f%remaining%"
-  title-no-kills: "&cDay of Assassins &7| &8No leader yet &7| next &f%remaining%"
+  # Cosmetic grace window (%countdown% = until hunt opens)
+  grace-title: "&aGrace &7| %timer_label% &f%countdown%"
+  # Hunt: %remaining% = until Finale (not until event end)
+  hunt-title: "&cDay of Assassins &7| &f%top_killer% &8(%top_kills% kills) &7| %timer_label% &f%remaining%"
+  hunt-title-no-kills: "&cDay of Assassins &7| &8No leader yet &7| %timer_label% &f%remaining%"
+  # Finale: %remaining% = until event end — never fall back to hunt-title
+  ffa-title: "&cFinale &7| &f%top_killer% &8(%top_kills% kills) &7| %timer_label% &f%remaining%"
+  ffa-title-no-kills: "&cFinale &7| &8No leader yet &7| %timer_label% &f%remaining%"
+  # Legacy hunt-only fallbacks (FFA does not use these)
+  title: "&cDay of Assassins &7| &f%top_killer% &8(%top_kills% kills) &7| %timer_label% &f%remaining%"
+  title-no-kills: "&cDay of Assassins &7| &8No leader yet &7| %timer_label% &f%remaining%"
 
 compass:
   already-have: "&cYou already have the Assassin's Compass."
@@ -129,7 +147,8 @@ ffa:
   final-countdown-subtitle: "&7Heading to the arena..."
   start-title: "&c&lFIGHT"
   start-subtitle: "&7The final deathmatch has begun"
-  join-message: "&c&lFinale is on! &7Head to the arena — only kills &finside the arena&7 count now."
+  # Mid-event join (not only after ring TP) — kill rule is arena-only
+  join-message: "&c&lFinale is on! &7Only kills &finside the arena&7 count now."
   # Prefer a server-real hint; avoid hard-coded warps that may not exist
   outside-actionbar: "&eFinale is underway — head to the arena!"
 
@@ -185,7 +204,7 @@ admin:
     start: "&7Start: &f%time% &8UTC"
     end: "&7End: &f%time% &8UTC"
     ffa: "&7Finale: &f%time% &8(%source%)"
-    remaining: "&7Time left (this stage / clock): &f%countdown%"
+    remaining: "&7Time left this stage: &f%countdown%"
     flags: "&7One-shots: &ffinale TP done=%ffa_teleported% &7| &fspawn RTP done=%spawn_rtp_done% &7| &fceremony done=%ceremony_done%"
     nobypass: "&7Nobypass: &f%state% &8(/preciv nobypass)"
     kills: "&7Kill rows: &f%rows% &7| Leader: &f%top_killer% &8(%top_kills%)"

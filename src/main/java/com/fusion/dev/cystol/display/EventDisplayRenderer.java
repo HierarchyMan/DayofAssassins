@@ -12,17 +12,61 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
- * Pure TAB display rendering: bossbar title/progress + scoreboard line injects at configured indices.
+ * Pure display rendering: bossbar title/progress + scoreboard line injects.
  * Used by {@link TabDisplayService}; unit-tested without a live TAB/Paper server.
  *
- * <p><strong>Scoreboard model:</strong> never build a replacement board. Resolve configured inject
- * templates with top-N / phase placeholders and write only those rows onto the existing TAB board.
+ * <h2>Phase → HUD mental model (source of truth)</h2>
+ *
+ * <pre>
+ * Stage          | %phase% label   | %timer_label%   | %remaining% means
+ * ---------------+-----------------+-----------------+------------------
+ * COUNTDOWN      | Starting soon   | Starts in       | until hunt start
+ * COUNTDOWN+grace| Grace           | Hunt opens in   | until hunt start
+ * HUNT           | Hunt            | Finale in       | until FFA moment
+ * FFA (Finale)   | Finale          | Ends in         | until event end
+ * PAUSED/IDLE/END| (HUD cleared)   | —               | —
+ * </pre>
+ *
+ * <p><strong>Rules:</strong>
+ * <ul>
+ *   <li>Timers always name the <em>destination</em>, never the current stage
+ *       (so “Hunt · Finale in 5m” cannot be misread as “hunt phase in 5m”).</li>
+ *   <li>Hunt and Finale use separate bossbar templates — never cross-fallback
+ *       (FFA must not reuse a hunt title that still says “Finale in”).</li>
+ *   <li>{@code %timer_label%} is the single source of truth for that prefix;
+ *       bossbar lang templates should include it rather than hard-coding English.</li>
+ *   <li>Scoreboard: inject only configured rows; never replace the whole board.</li>
+ * </ul>
  */
 public final class EventDisplayRenderer {
+
+    /** Safe hard defaults if lang keys are blank (still use {@code %timer_label%}). */
+    public static final String DEFAULT_HUNT_TITLE =
+            "&cDay of Assassins &7| &f%top_killer% &8(%top_kills% kills) &7| %timer_label% &f%remaining%";
+    public static final String DEFAULT_HUNT_TITLE_NO_KILLS =
+            "&cDay of Assassins &7| &8No leader yet &7| %timer_label% &f%remaining%";
+    public static final String DEFAULT_FFA_TITLE =
+            "&cFinale &7| &f%top_killer% &8(%top_kills% kills) &7| %timer_label% &f%remaining%";
+    public static final String DEFAULT_FFA_TITLE_NO_KILLS =
+            "&cFinale &7| &8No leader yet &7| %timer_label% &f%remaining%";
+    public static final String DEFAULT_COUNTDOWN_TITLE =
+            "&cDay of Assassins &7starts in &f%countdown%";
+    public static final String DEFAULT_GRACE_TITLE =
+            "&aGrace &7| %timer_label% &f%countdown%";
+
+    /**
+     * Legacy scoreboard used bare {@code next %remaining%}, which reads as a current-stage
+     * countdown. Rewrite only that token when {@code %timer_label%} is absent.
+     */
+    private static final Pattern LEGACY_NEXT_REMAINING = Pattern.compile(
+            "(?i)\\bnext(\\s+(?:&[0-9a-fk-orx])*)?(%remaining%)"
+    );
 
     /**
      * @param countdownMode true for pre-start countdown (including cosmetic grace)
@@ -60,6 +104,56 @@ public final class EventDisplayRenderer {
         }
     }
 
+    /**
+     * Bundled timer prefixes from lang ({@code timer.*}).
+     */
+    public record TimerLabels(
+            String startsIn,
+            String huntOpensIn,
+            String finaleIn,
+            String endsIn
+    ) {
+        public static TimerLabels defaults() {
+            return new TimerLabels("Starts in", "Hunt opens in", "Finale in", "Ends in");
+        }
+
+        public TimerLabels {
+            startsIn = firstNonBlank(startsIn, "Starts in");
+            huntOpensIn = firstNonBlank(huntOpensIn, "Hunt opens in");
+            finaleIn = firstNonBlank(finaleIn, "Finale in");
+            endsIn = firstNonBlank(endsIn, "Ends in");
+        }
+    }
+
+    /**
+     * Bundled friendly phase names from lang ({@code phase.*}).
+     */
+    public record PhaseLabels(
+            String idle,
+            String paused,
+            String countdown,
+            String grace,
+            String hunt,
+            String ffa,
+            String ended
+    ) {
+        public static PhaseLabels defaults() {
+            return new PhaseLabels(
+                    "Idle", "Paused", "Starting soon", "Grace", "Hunt", "Finale", "Ended"
+            );
+        }
+
+        public PhaseLabels {
+            idle = firstNonBlank(idle, "Idle");
+            paused = firstNonBlank(paused, "Paused");
+            countdown = firstNonBlank(countdown, "Starting soon");
+            grace = firstNonBlank(grace, "Grace");
+            hunt = firstNonBlank(hunt, "Hunt");
+            ffa = firstNonBlank(ffa, "Finale");
+            ended = firstNonBlank(ended, "Ended");
+        }
+    }
+
     private EventDisplayRenderer() {
     }
 
@@ -72,6 +166,9 @@ public final class EventDisplayRenderer {
      *
      * <p>When cosmetic grace is active (last N seconds of COUNTDOWN), title/progress use the
      * grace window only — real phase stays {@link EventPhase#COUNTDOWN}.
+     *
+     * <p>Hunt and Finale use separate title templates so the timer names the destination
+     * (“Finale in …” / “Ends in …”) instead of a bare “next …”.
      */
     public static BossBarView renderBossBar(
             EventTimeline timeline,
@@ -83,11 +180,16 @@ public final class EventDisplayRenderer {
             String topKillerName,
             Integer topKills
     ) {
+        double progress = timeline.bossBarProgress(now, null, null, null);
         return renderBossBar(
-                timeline, now, announceLeadSeconds,
-                countdownTitleTemplate, liveTitleTemplate, noKillsTitleTemplate,
+                timeline, now,
+                countdownTitleTemplate,
+                liveTitleTemplate, noKillsTitleTemplate,
+                liveTitleTemplate, noKillsTitleTemplate,
                 topKillerName, topKills,
-                false, 0L, null
+                false, 0L, null,
+                TimerLabels.defaults(),
+                progress
         );
     }
 
@@ -109,27 +211,148 @@ public final class EventDisplayRenderer {
             long graceSeconds,
             String graceTitleTemplate
     ) {
+        double progress = timeline.bossBarProgress(now, null, null, null);
+        return renderBossBar(
+                timeline, now,
+                countdownTitleTemplate,
+                liveTitleTemplate, noKillsTitleTemplate,
+                liveTitleTemplate, noKillsTitleTemplate,
+                topKillerName, topKills,
+                graceEnabled, graceSeconds, graceTitleTemplate,
+                TimerLabels.defaults(),
+                progress
+        );
+    }
+
+    /**
+     * Phase-split templates with default timer labels (tests / simple callers).
+     */
+    public static BossBarView renderBossBar(
+            EventTimeline timeline,
+            Instant now,
+            long announceLeadSeconds,
+            String countdownTitleTemplate,
+            String huntTitleTemplate,
+            String huntNoKillsTitleTemplate,
+            String ffaTitleTemplate,
+            String ffaNoKillsTitleTemplate,
+            String topKillerName,
+            Integer topKills,
+            boolean graceEnabled,
+            long graceSeconds,
+            String graceTitleTemplate
+    ) {
+        double progress = timeline.bossBarProgress(now, null, null, null);
+        return renderBossBar(
+                timeline, now,
+                countdownTitleTemplate,
+                huntTitleTemplate, huntNoKillsTitleTemplate,
+                ffaTitleTemplate, ffaNoKillsTitleTemplate,
+                topKillerName, topKills,
+                graceEnabled, graceSeconds, graceTitleTemplate,
+                TimerLabels.defaults(),
+                progress
+        );
+    }
+
+    /**
+     * Phase-split templates + timer labels; progress from schedule fallbacks (null anchors).
+     */
+    public static BossBarView renderBossBar(
+            EventTimeline timeline,
+            Instant now,
+            long announceLeadSeconds,
+            String countdownTitleTemplate,
+            String huntTitleTemplate,
+            String huntNoKillsTitleTemplate,
+            String ffaTitleTemplate,
+            String ffaNoKillsTitleTemplate,
+            String topKillerName,
+            Integer topKills,
+            boolean graceEnabled,
+            long graceSeconds,
+            String graceTitleTemplate,
+            TimerLabels timerLabels
+    ) {
+        double progress = timeline.bossBarProgress(now, null, null, null);
+        return renderBossBar(
+                timeline, now,
+                countdownTitleTemplate,
+                huntTitleTemplate, huntNoKillsTitleTemplate,
+                ffaTitleTemplate, ffaNoKillsTitleTemplate,
+                topKillerName, topKills,
+                graceEnabled, graceSeconds, graceTitleTemplate,
+                timerLabels,
+                progress
+        );
+    }
+
+    /**
+     * Full bossbar render with phase-split templates, destination timer labels, and explicit bar progress.
+     *
+     * @param barProgress 0–1 from {@link EventTimeline#bossBarProgress} (fill pre-hunt, drain hunt/ffa)
+     */
+    public static BossBarView renderBossBar(
+            EventTimeline timeline,
+            Instant now,
+            String countdownTitleTemplate,
+            String huntTitleTemplate,
+            String huntNoKillsTitleTemplate,
+            String ffaTitleTemplate,
+            String ffaNoKillsTitleTemplate,
+            String topKillerName,
+            Integer topKills,
+            boolean graceEnabled,
+            long graceSeconds,
+            String graceTitleTemplate,
+            TimerLabels timerLabels,
+            double barProgress
+    ) {
         Objects.requireNonNull(timeline, "timeline");
         Objects.requireNonNull(now, "now");
+        TimerLabels timers = timerLabels == null ? TimerLabels.defaults() : timerLabels;
         EventPhase phase = timeline.phaseAt(now);
         boolean grace = timeline.inGraceWindow(now, graceEnabled, graceSeconds);
+        String timerLabel = timerLabelForPhase(phase, grace, timers);
+        float progress = clamp01((float) barProgress);
+
         if (grace) {
             long secs = timeline.secondsUntilNextPhase(now);
             String countdown = TimeUtil.formatCountdown(secs);
-            String template = graceTitleTemplate == null || graceTitleTemplate.isBlank()
-                    ? countdownTitleTemplate
-                    : graceTitleTemplate;
-            String title = TextUtil.apply(template, Map.of("countdown", countdown));
-            float progress = (float) timeline.graceFillProgress(now, graceSeconds);
-            return new BossBarView(title, clamp01(progress), true, true);
+            String template = firstNonBlank(graceTitleTemplate, DEFAULT_GRACE_TITLE);
+            if (template.isBlank()) {
+                template = firstNonBlank(countdownTitleTemplate, DEFAULT_COUNTDOWN_TITLE);
+            }
+            String title = TextUtil.apply(template, Map.of(
+                    "countdown", countdown,
+                    "remaining", countdown,
+                    "timer_label", timerLabel
+            ));
+            return new BossBarView(title, progress, true, true);
         }
         if (phase == EventPhase.COUNTDOWN) {
             long secs = timeline.secondsUntilNextPhase(now);
             String countdown = TimeUtil.formatCountdown(secs);
-            String title = TextUtil.apply(countdownTitleTemplate, Map.of("countdown", countdown));
-            float progress = (float) timeline.phaseFillProgress(now, announceLeadSeconds);
-            return new BossBarView(title, clamp01(progress), true, false);
+            String template = firstNonBlank(countdownTitleTemplate, DEFAULT_COUNTDOWN_TITLE);
+            String title = TextUtil.apply(template, Map.of(
+                    "countdown", countdown,
+                    "remaining", countdown,
+                    "timer_label", timerLabel
+            ));
+            return new BossBarView(title, progress, true, false);
         }
+
+        // Never cross-fallback hunt ↔ ffa templates (wrong destination wording).
+        String liveTitleTemplate;
+        String noKillsTitleTemplate;
+        if (phase == EventPhase.FFA) {
+            liveTitleTemplate = firstNonBlank(ffaTitleTemplate, DEFAULT_FFA_TITLE);
+            noKillsTitleTemplate = firstNonBlank(ffaNoKillsTitleTemplate, DEFAULT_FFA_TITLE_NO_KILLS);
+        } else {
+            liveTitleTemplate = firstNonBlank(huntTitleTemplate, DEFAULT_HUNT_TITLE);
+            noKillsTitleTemplate = firstNonBlank(huntNoKillsTitleTemplate, DEFAULT_HUNT_TITLE_NO_KILLS);
+        }
+
         String remaining = TimeUtil.formatCountdown(timeline.secondsUntilNextPhase(now));
         String untilEnd = TimeUtil.formatCountdown(timeline.secondsUntilEnd(now));
         String title;
@@ -138,16 +361,100 @@ public final class EventDisplayRenderer {
                     "top_killer", topKillerName,
                     "top_kills", String.valueOf(topKills == null ? 0 : topKills),
                     "remaining", remaining,
-                    "until_end", untilEnd
+                    "until_end", untilEnd,
+                    "timer_label", timerLabel
             ));
         } else {
             title = TextUtil.apply(noKillsTitleTemplate, Map.of(
                     "remaining", remaining,
-                    "until_end", untilEnd
+                    "until_end", untilEnd,
+                    "timer_label", timerLabel
             ));
         }
-        float progress = (float) timeline.phaseFillProgress(now, announceLeadSeconds);
-        return new BossBarView(title, clamp01(progress), false, false);
+        return new BossBarView(title, progress, false, false);
+    }
+
+    /**
+     * Destination-facing timer prefix for HUD copy (pair with {@code %remaining%}).
+     * Names what is coming — never the current stage — so "Hunt · Finale in 5m"
+     * cannot be misread as "hunt phase in 5m".
+     */
+    public static String timerLabelForPhase(
+            EventPhase phase,
+            boolean graceMode,
+            String startsIn,
+            String huntOpensIn,
+            String finaleIn,
+            String endsIn
+    ) {
+        return timerLabelForPhase(phase, graceMode, new TimerLabels(startsIn, huntOpensIn, finaleIn, endsIn));
+    }
+
+    public static String timerLabelForPhase(EventPhase phase, boolean graceMode, TimerLabels labels) {
+        TimerLabels t = labels == null ? TimerLabels.defaults() : labels;
+        if (graceMode) {
+            return t.huntOpensIn();
+        }
+        if (phase == null) {
+            return t.startsIn();
+        }
+        return switch (phase) {
+            case COUNTDOWN -> t.startsIn();
+            case HUNT -> t.finaleIn();
+            case FFA -> t.endsIn();
+            case ENDED, IDLE, PAUSED -> t.endsIn();
+        };
+    }
+
+    /**
+     * Player-facing current-stage label (not the destination timer).
+     * Grace is cosmetic and overrides COUNTDOWN display only.
+     */
+    public static String phaseLabel(EventPhase phase, boolean graceMode, PhaseLabels labels) {
+        PhaseLabels p = labels == null ? PhaseLabels.defaults() : labels;
+        if (graceMode) {
+            return p.grace();
+        }
+        if (phase == null) {
+            return p.idle();
+        }
+        return switch (phase) {
+            case IDLE -> p.idle();
+            case PAUSED -> p.paused();
+            case COUNTDOWN -> p.countdown();
+            case HUNT -> p.hunt();
+            case FFA -> p.ffa();
+            case ENDED -> p.ended();
+        };
+    }
+
+    /**
+     * Staff-facing stage label: friendly name, with enum in parentheses when they differ
+     * (e.g. {@code Finale (FFA)}) so ops still match {@code /preciv admin phase} tokens.
+     */
+    public static String opsPhaseLabel(EventPhase phase, PhaseLabels labels) {
+        if (phase == null) {
+            return phaseLabel(null, false, labels);
+        }
+        String friendly = phaseLabel(phase, false, labels);
+        if (friendly.equalsIgnoreCase(phase.name())) {
+            return friendly;
+        }
+        return friendly + " (" + phase.name() + ")";
+    }
+
+    /**
+     * Upgrade legacy scoreboard templates that used bare {@code next %remaining%}.
+     * Idempotent when {@code %timer_label%} is already present.
+     */
+    public static String normalizeScoreboardTemplate(String text) {
+        if (text == null || text.isBlank()) {
+            return text == null ? "" : text;
+        }
+        if (text.toLowerCase(Locale.ROOT).contains("%timer_label%")) {
+            return text;
+        }
+        return LEGACY_NEXT_REMAINING.matcher(text).replaceAll("%timer_label%$1$2");
     }
 
     /**
@@ -177,7 +484,8 @@ public final class EventDisplayRenderer {
      * <ul>
      *   <li>{@code %top1_name%} {@code %top1_kills%} {@code %top1_place%} … through top-slots</li>
      *   <li>{@code %top_killer%} / {@code %top_kills%} — aliases for slot 1 (compat)</li>
-     *   <li>{@code %phase%} — localized phase label</li>
+     *   <li>{@code %phase%} — localized <em>current</em> stage label</li>
+     *   <li>{@code %timer_label%} — destination prefix (“Finale in”, “Ends in”, …)</li>
      *   <li>{@code %remaining%} — until next phase boundary</li>
      *   <li>{@code %until_end%} — until event end</li>
      * </ul>
@@ -192,6 +500,26 @@ public final class EventDisplayRenderer {
             String emptyName,
             String emptyKills
     ) {
+        return buildPlaceholders(
+                phase, phaseLabel, remainingUntilPhase, remainingUntilEnd,
+                null, tops, topSlots, emptyName, emptyKills
+        );
+    }
+
+    /**
+     * @param timerLabel destination-facing prefix for {@code %timer_label%} (may be null/blank)
+     */
+    public static Map<String, String> buildPlaceholders(
+            EventPhase phase,
+            String phaseLabel,
+            String remainingUntilPhase,
+            String remainingUntilEnd,
+            String timerLabel,
+            List<TopSlot> tops,
+            int topSlots,
+            String emptyName,
+            String emptyKills
+    ) {
         String emptyN = emptyName == null || emptyName.isBlank() ? "—" : emptyName;
         String emptyK = emptyKills == null ? "0" : emptyKills;
         int slots = Math.max(1, topSlots);
@@ -201,6 +529,7 @@ public final class EventDisplayRenderer {
         ph.put("phase", phaseLabel == null || phaseLabel.isBlank()
                 ? (phase == null ? "IDLE" : phase.name())
                 : phaseLabel);
+        ph.put("timer_label", timerLabel == null ? "" : timerLabel);
         ph.put("remaining", remainingUntilPhase == null ? "" : remainingUntilPhase);
         ph.put("until_end", remainingUntilEnd == null ? "" : remainingUntilEnd);
 
@@ -223,6 +552,7 @@ public final class EventDisplayRenderer {
     /**
      * Resolve only the configured event lines (index → text) for injection into an existing TAB board.
      * Does <strong>not</strong> pad filler rows — non-configured indices are left untouched.
+     * Applies {@link #normalizeScoreboardTemplate(String)} so legacy “next %remaining%” lines upgrade.
      */
     public static Map<Integer, String> renderScoreboardInjections(
             List<PluginConfig.ScoreboardLine> configuredLines,
@@ -237,7 +567,8 @@ public final class EventDisplayRenderer {
             if (line == null || line.text() == null || line.line() < 0) {
                 continue;
             }
-            String text = colorAmpersandToSection(TextUtil.apply(line.text(), ph));
+            String template = normalizeScoreboardTemplate(line.text());
+            String text = colorAmpersandToSection(TextUtil.apply(template, ph));
             injected.put(line.line(), text.isBlank() ? " " : text);
         }
         return Map.copyOf(injected);
@@ -257,10 +588,31 @@ public final class EventDisplayRenderer {
             String emptyName,
             String emptyKills
     ) {
+        return renderScoreboardInjections(
+                configuredLines, phase, phaseLabel, remainingUntilPhase, remainingUntilEnd,
+                null, ranking, topSlots, emptyName, emptyKills
+        );
+    }
+
+    /**
+     * @param timerLabel destination-facing {@code %timer_label%} (e.g. "Finale in")
+     */
+    public static Map<Integer, String> renderScoreboardInjections(
+            List<PluginConfig.ScoreboardLine> configuredLines,
+            EventPhase phase,
+            String phaseLabel,
+            String remainingUntilPhase,
+            String remainingUntilEnd,
+            String timerLabel,
+            List<DenseRanking.Entry> ranking,
+            int topSlots,
+            String emptyName,
+            String emptyKills
+    ) {
         List<TopSlot> tops = topSlots(ranking, topSlots);
         Map<String, String> ph = buildPlaceholders(
                 phase, phaseLabel, remainingUntilPhase, remainingUntilEnd,
-                tops, topSlots, emptyName, emptyKills
+                timerLabel, tops, topSlots, emptyName, emptyKills
         );
         return renderScoreboardInjections(configuredLines, ph);
     }
@@ -357,7 +709,8 @@ public final class EventDisplayRenderer {
             while (lines.size() <= line.line()) {
                 lines.add(" ");
             }
-            lines.set(line.line(), colorAmpersandToSection(line.text() == null ? " " : line.text()));
+            String raw = line.text() == null ? " " : normalizeScoreboardTemplate(line.text());
+            lines.set(line.line(), colorAmpersandToSection(raw));
         }
         return lines;
     }
@@ -372,6 +725,13 @@ public final class EventDisplayRenderer {
             return "";
         }
         return s.replace('&', '§');
+    }
+
+    static String firstNonBlank(String preferred, String fallback) {
+        if (preferred != null && !preferred.isBlank()) {
+            return preferred;
+        }
+        return fallback == null ? "" : fallback;
     }
 
     private static float clamp01(float v) {

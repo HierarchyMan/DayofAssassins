@@ -156,18 +156,35 @@ public final class TabDisplayService {
             boolean graceActive = timeline.inGraceWindow(
                     now, config.graceEnabled(), config.graceSeconds()
             );
+            EventDisplayRenderer.TimerLabels timerLabels = loadTimerLabels();
+            // Hunt may fall back to legacy bossbar.title; Finale must NOT (legacy often says
+            // "Finale in" which is wrong once already in FFA).
+            String huntTitle = firstNonBlank(
+                    lang.raw("bossbar.hunt-title", null),
+                    lang.raw("bossbar.title", null)
+            );
+            String huntNoKills = firstNonBlank(
+                    lang.raw("bossbar.hunt-title-no-kills", null),
+                    lang.raw("bossbar.title-no-kills", null)
+            );
+            String ffaTitle = lang.raw("bossbar.ffa-title", null);
+            String ffaNoKills = lang.raw("bossbar.ffa-title-no-kills", null);
+            double barProgress = eventManager.bossBarProgress(now);
             EventDisplayRenderer.BossBarView bar = EventDisplayRenderer.renderBossBar(
                     timeline,
                     now,
-                    config.announceLeadSeconds(),
-                    lang.raw("bossbar.countdown-title"),
-                    lang.raw("bossbar.title"),
-                    lang.raw("bossbar.title-no-kills"),
+                    lang.raw("bossbar.countdown-title", null),
+                    huntTitle,
+                    huntNoKills,
+                    ffaTitle,
+                    ffaNoKills,
                     topName,
                     topKills,
                     config.graceEnabled(),
                     config.graceSeconds(),
-                    lang.raw("bossbar.grace-title")
+                    lang.raw("bossbar.grace-title", null),
+                    timerLabels,
+                    barProgress
             );
 
             active = true;
@@ -352,16 +369,18 @@ public final class TabDisplayService {
         // %remaining% = until next phase (hunt→ffa, ffa→end). %until_end% still available in templates.
         String remainingPhase = TimeUtil.formatCountdown(timeline.secondsUntilNextPhase(now));
         String remainingEnd = TimeUtil.formatCountdown(timeline.secondsUntilEnd(now));
+        EventDisplayRenderer.PhaseLabels phaseLabels = loadPhaseLabels();
+        EventDisplayRenderer.TimerLabels timerLabels = loadTimerLabels();
         // Cosmetic grace label does not change real EventPhase
-        String phaseLabel = graceActive
-                ? lang.raw("phase.grace", "Grace")
-                : lang.raw("phase." + phase.name().toLowerCase(), phase.name());
+        String phaseLabel = EventDisplayRenderer.phaseLabel(phase, graceActive, phaseLabels);
+        String timerLabel = EventDisplayRenderer.timerLabelForPhase(phase, graceActive, timerLabels);
         Map<Integer, String> injections = EventDisplayRenderer.renderScoreboardInjections(
                 configured,
                 phase,
                 phaseLabel,
                 remainingPhase,
                 remainingEnd,
+                timerLabel,
                 topRanking,
                 topSlots,
                 config.scoreboardEmptyName(),
@@ -863,5 +882,33 @@ public final class TabDisplayService {
         } catch (Throwable t) {
             return false;
         }
+    }
+
+    private EventDisplayRenderer.TimerLabels loadTimerLabels() {
+        return new EventDisplayRenderer.TimerLabels(
+                lang.raw("timer.starts-in", "Starts in"),
+                lang.raw("timer.hunt-opens-in", "Hunt opens in"),
+                lang.raw("timer.finale-in", "Finale in"),
+                lang.raw("timer.ends-in", "Ends in")
+        );
+    }
+
+    private EventDisplayRenderer.PhaseLabels loadPhaseLabels() {
+        return new EventDisplayRenderer.PhaseLabels(
+                lang.raw("phase.idle", "Idle"),
+                lang.raw("phase.paused", "Paused"),
+                lang.raw("phase.countdown", "Starting soon"),
+                lang.raw("phase.grace", "Grace"),
+                lang.raw("phase.hunt", "Hunt"),
+                lang.raw("phase.ffa", "Finale"),
+                lang.raw("phase.ended", "Ended")
+        );
+    }
+
+    private static String firstNonBlank(String preferred, String fallback) {
+        if (preferred != null && !preferred.isBlank()) {
+            return preferred;
+        }
+        return fallback == null ? "" : fallback;
     }
 }

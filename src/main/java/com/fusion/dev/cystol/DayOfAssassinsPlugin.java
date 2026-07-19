@@ -160,7 +160,7 @@ public final class DayOfAssassinsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
                 new PvpManagerKillListener(eventManager, killService, config, effects, lang, getLogger()), this);
 
-        getServer().getPluginManager().registerEvents(new TeleportLockListener(teleportLock, lang), this);
+        getServer().getPluginManager().registerEvents(new TeleportLockListener(this, teleportLock, lang), this);
         getServer().getPluginManager().registerEvents(
                 new SpawnHuntRtpJoinListener(this, spawnHuntRtpService), this);
 
